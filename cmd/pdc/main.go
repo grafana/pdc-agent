@@ -11,7 +11,8 @@ import (
 )
 
 func main() {
-	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 	// Create the SSH Service
 	sshClient := ssh.NewClient(&ssh.Config{Args: os.Args[1:]})
 	// Start the ssh client
