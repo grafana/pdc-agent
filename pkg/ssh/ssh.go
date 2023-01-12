@@ -42,6 +42,8 @@ func (s *SSHClient) starting(ctx context.Context) error {
 				break // context was canceled
 			}
 			log.Println("ssh client exited, restarting")
+			// backoff
+			// TODO: Implement exponential backoff
 			time.Sleep(1 * time.Second)
 		}
 	}()
