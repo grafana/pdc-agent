@@ -1,6 +1,6 @@
 # pdc-agent
 
-The Grafana Private Datasource Connect Agent allows connecting private workloads with your grafana cloud instance.
+The Grafana Private Datasource Connect Agent allows connecting private datasources with your grafana cloud instance.
 
 
 ### Releasing
