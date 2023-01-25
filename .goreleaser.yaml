@@ -36,7 +36,7 @@ dockers:
       - pdc
     dockerfile: ./cmd/pdc/Dockerfile
     image_templates:
-    - grafana/pdc-agent
+    - us.gcr.io/grafana/pdc-agent:latest
 
 checksum:
   name_template: 'checksums.txt'

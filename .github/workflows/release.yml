@@ -1,0 +1,53 @@
+name: goreleaser
+
+on:
+  push:
+    # run only against tags
+    tags:
+      - '*'
+
+permissions:
+  contents: write
+  # packages: write
+  # issues: write
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    env:
+      DOCKER_BUILDKIT: 1
+
+    steps:
+      # - uses: zendesk/setup-jsonnet@v10
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      # Required so that we fetch tags as well (https://github.com/actions/checkout/issues/448)
+      - run: |
+          git fetch origin +refs/tags/*:refs/tags/*
+          git tag -l -n1
+      - name: Docker Login (GCR)
+        env:
+          GCP_CONTAINERS_SA_JSON: ${{ secrets.GCP_CONTAINERS_SA_JSON }}
+        run: |
+          printf %s "$GCP_CONTAINERS_SA_JSON" | docker login -u _json_key --password-stdin https://us.gcr.io
+      - name: Configure GCS Auth
+        env:
+          GCS_AUTH: ${{ secrets.GCS_AUTH }}
+        run: |
+          set -e
+          printf %s "$GCS_AUTH" > gs-creds.json
+          jq -r .client_email gs-creds.json > iam-account.txt
+
+          gcloud auth activate-service-account --key-file ./gs-creds.json
+      - uses: actions/setup-go@v3
+        with:
+          go-version: '>=1.19.5'
+          cache: true
+      - uses: goreleaser/goreleaser-action@v4
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --rm-dist
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
