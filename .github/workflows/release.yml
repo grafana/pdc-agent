@@ -43,4 +43,4 @@ jobs:
           version: latest
           args: release --rm-dist
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_BOT_ACCESS_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GRAFANABOT_PAT }}
