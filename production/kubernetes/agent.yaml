@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: grafana-pdc-agent
+    name: grafana-pdc-agent
+  name: grafana-pdc-agent
+  namespace: ${NAMESPACE}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: grafana-pdc-agent
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        name: grafana-pdc-agent
+    spec:
+      containers:
+      - args:
+        - -i
+        - /var/run/secrets/grafana-pdc-agent/key
+        - ${SLUG}@${PDC_GATEWAY}
+        - -p
+        - "22"
+        - -o
+        - BatchMode=yes
+        - -o
+        - UserKnownHostsFile=/var/run/secrets/grafana-pdc-agent/known_hosts
+        - -o
+        - CertificateFile=/var/run/secrets/grafana-pdc-agent/cert.pub
+        - -R
+        - "0"
+        - -vv
+        image: grafana/pdc-agent:latest
+        imagePullPolicy: IfNotPresent
+        name: grafana-pdc-agent
+        resources:
+          limits:
+            memory: 1Gi
+          requests:
+            cpu: 1
+            memory: 1Gi
+        volumeMounts:
+        - mountPath: /var/run/secrets/grafana-pdc-agent
+          name: grafana-pdc-agent-${SLUG}
+          readOnly: true
+      volumes:
+      - name: grafana-pdc-agent-${SLUG}
+        secret:
+          defaultMode: 0400
+          secretName: grafana-pdc-agent-${SLUG}
