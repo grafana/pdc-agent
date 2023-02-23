@@ -36,7 +36,7 @@ spec:
         - CertificateFile=/var/run/secrets/grafana-pdc-agent/cert.pub
         - -R
         - "0"
-        - -vv
+        - -vvv
         image: grafana/pdc-agent:latest
         imagePullPolicy: IfNotPresent
         name: grafana-pdc-agent
@@ -48,10 +48,10 @@ spec:
             memory: 1Gi
         volumeMounts:
         - mountPath: /var/run/secrets/grafana-pdc-agent
-          name: grafana-pdc-agent-${SLUG}
+          name: grafana-pdc-agent
           readOnly: true
       volumes:
-      - name: grafana-pdc-agent-${SLUG}
+      - name: grafana-pdc-agent
         secret:
           defaultMode: 0400
-          secretName: grafana-pdc-agent-${SLUG}
+          secretName: grafana-pdc-agent
