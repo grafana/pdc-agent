@@ -26,8 +26,8 @@ KEY=$(cat key)
 KNOWN_HOSTS=$(cat known_hosts)
 CERT_PUB=$(cat cert.pub)
 
-MANIFEST_BRANCH=main
-MANIFEST_URL=${MANIFEST_URL:-https://raw.githubusercontent.com/grafana/agent/${MANIFEST_BRANCH}/production/kubernetes/agent-secret.yaml}
+MANIFEST_BRANCH=${MANIFEST_BRANCH:-main}
+MANIFEST_URL=${MANIFEST_URL:-https://raw.githubusercontent.com/grafana/pdc-agent/${MANIFEST_BRANCH}/production/kubernetes/agent-secret.yaml}
 NAMESPACE=${NAMESPACE:-default}
 
 export NAMESPACE
@@ -35,4 +35,4 @@ export KEY
 export KNOWN_HOSTS
 export CERT_PUB
 
-curl -fsSL "$MANIFEST_URL" | envsubst
+curl -fsSL "$MANIFEST_URL" | envsubst | kubectl apply -f -
