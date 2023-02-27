@@ -36,4 +36,4 @@ export KEY
 export KNOWN_HOSTS
 export CERT_PUB
 
-curl -fsSL "$MANIFEST_URL" | envsubst > $OUTFILE
+curl -fsSL "$MANIFEST_URL" | envsubst > "$OUTFILE"

@@ -46,6 +46,12 @@ spec:
           requests:
             cpu: 1
             memory: 1Gi
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+            drop:
+              - all
         volumeMounts:
         - mountPath: /var/run/secrets/grafana-pdc-agent
           name: grafana-pdc-agent
