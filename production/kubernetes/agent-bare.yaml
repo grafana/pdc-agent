@@ -49,6 +49,7 @@ spec:
         securityContext:
           allowPrivilegeEscalation: false
           privileged: false
+          runAsNonRoot: true
           capabilities:
             drop:
               - all
@@ -56,6 +57,9 @@ spec:
         - mountPath: /var/run/secrets/grafana-pdc-agent
           name: grafana-pdc-agent
           readOnly: true
+      securityContext:
+        runAsUser: 30000
+        runAsGroup: 30000
       volumes:
       - name: grafana-pdc-agent
         secret:
