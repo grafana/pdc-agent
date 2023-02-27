@@ -60,6 +60,7 @@ spec:
       securityContext:
         runAsUser: 30000
         runAsGroup: 30000
+        fsGroup: 30000
       volumes:
       - name: grafana-pdc-agent
         secret:
