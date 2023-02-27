@@ -36,7 +36,7 @@ kubectl create secret generic -n ${NAMESPACE} grafana-pdc-agent \
 Run the `install-agent.sh` script, with some required environment variables. Get the correct PDC_GATEWAY value from the Grafana team:
 
 ```
-SLUG=slug PDC_GATEWAY=private-datasource-connect-prod-us-central-0.grafana.net ./install-agent.sh
+SLUG=slug PDC_GATEWAY=private-datasource-connect-<cluster>.grafana.net ./install-agent.sh
 ```
 
 This will create a manifest. Apply the manifest with

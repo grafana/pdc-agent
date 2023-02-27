@@ -22,8 +22,8 @@ if [[ -z "$PDC_GATEWAY" ]] ; then
   exit 1
 fi
 
-MANIFEST_BRANCH={}
-MANIFEST_URL=${MANIFEST_URL:-https://raw.githubusercontent.com/grafana/pdc-agent/${MANIFEST_BRANCH}/production/kubernetes/agent.yaml}
+MANIFEST_BRANCH=${MANIFEST_BRANCH:-main}
+MANIFEST_URL=${MANIFEST_URL:-https://raw.githubusercontent.com/grafana/pdc-agent/${MANIFEST_BRANCH}/production/kubernetes/agent-bare.yaml}
 NAMESPACE=${NAMESPACE:-default}
 OUTFILE=${OUTFILE:-deployment.yaml}
 
@@ -32,4 +32,4 @@ export NAMESPACE
 export SLUG
 export PDC_GATEWAY
 
-curl -fsSL "$MANIFEST_URL" | envsubst > $OUTFILE
+curl -fsSL "$MANIFEST_URL" | envsubst > "$OUTFILE"
