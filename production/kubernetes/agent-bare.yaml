@@ -38,7 +38,7 @@ spec:
         - "0"
         - -vvv
         image: grafana/pdc-agent:latest
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         name: grafana-pdc-agent
         resources:
           limits:
