@@ -34,6 +34,8 @@ spec:
         - UserKnownHostsFile=/var/run/secrets/grafana-pdc-agent/known_hosts
         - -o
         - CertificateFile=/var/run/secrets/grafana-pdc-agent/cert.pub
+        - -o
+        - ServerAliveInterval=15
         - -R
         - "0"
         - -vvv
