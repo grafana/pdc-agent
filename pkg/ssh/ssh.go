@@ -2,16 +2,66 @@ package ssh
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/grafana/dskit/services"
 )
 
 type Config struct {
-	Args []string
+	Args []string // deprecated
+
+	KeyFile               string   // path to private key file
+	SSHFlags              []string // Additional flags to be passed to ssh(1). e.g. --ssh-flag="-vvv" --ssh-flag="-L 80:localhost:80"
+	ForceKeyFileOverwrite bool
+	Port                  int
+	Identity              string // Once we have multiple private networks, this will be the network name
+	Domain                string
+	HostedGrafanaId       string
+	PDCSigningToken       string
+	Host                  string // TODO consider having separate config items for gateway and api endpoints
+}
+
+const forceKeyFileOverwriteUsage = `If enabled, the pdc-agent will regenerate an SSH key pair and request a new
+certificate to use whem establishing an SSH tunnel.
+
+If disabled, pdc-agent will use existing SSH keys and only request a new SSH
+certificate when the existing one is expired. If no SHH keys exist, it will
+generate a pair and request a certificate.`
+
+// DefaultConfig returns a Config with some sensible defaults set
+func DefaultConfig() *Config {
+	return &Config{
+		Port:    22,
+		Domain:  "grafana.net",
+		KeyFile: "~/.ssh/gcloud_pdc",
+	}
+}
+
+func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+	def := DefaultConfig()
+
+	f.StringVar(&cfg.Host, "host", "", "The host for PDC endpoints")
+	f.StringVar(&cfg.Domain, "domain", def.Domain, "The domain for PDC endpoints")
+
+	cfg.SSHFlags = []string{}
+	f.Func("ssh-flag", "Additional flags to be passed to ssh. Can be set more than once.", cfg.addSSHFlag)
+	f.StringVar(&cfg.KeyFile, "ssh-key-file", def.KeyFile, "The path to the SSH key file.")
+	// This will be required when we have multiple private networks
+	// f.StringVar(&cfg.Identity, "ssh-identity", "", "The identity used for the ssh connection")
+	f.StringVar(&cfg.HostedGrafanaId, "gcloud-hosted-grafana-id", "", "The ID of the Hosted Grafana instance to connect to")
+	f.StringVar(&cfg.PDCSigningToken, "token", "", "The token to use to authenticate with Grafana Cloud. It must have the pdc-signing:write scope")
+	f.BoolVar(&cfg.ForceKeyFileOverwrite, "force-key-file-overwrite", false, forceKeyFileOverwriteUsage)
+
+}
+
+func (cfg *Config) addSSHFlag(flag string) error {
+	return nil
 }
 
 type SSHClient struct {
@@ -26,6 +76,13 @@ func NewClient(cfg *Config) *SSHClient {
 		cfg:    cfg,
 		SSHCmd: "ssh",
 	}
+
+	// Set the Identity to the HG ID for now. When we have multiple private
+	// networks, the Identity will be the network ID.
+	if cfg.Identity == "" {
+		cfg.Identity = cfg.HostedGrafanaId
+	}
+
 	client.BasicService = services.NewIdleService(client.starting, client.stopping)
 	return client
 }
@@ -34,7 +91,7 @@ func (s *SSHClient) starting(ctx context.Context) error {
 	log.Println("starting ssh client")
 	go func() {
 		for {
-			cmd := exec.CommandContext(ctx, s.SSHCmd, s.cfg.Args...)
+			cmd := exec.CommandContext(ctx, s.SSHCmd, s.SSHFlagsFromConfig()...)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			cmd.Run()
@@ -53,4 +110,62 @@ func (s *SSHClient) starting(ctx context.Context) error {
 func (s *SSHClient) stopping(err error) error {
 	log.Println("stopping ssh client")
 	return err
+}
+
+// SSHFlagsFromConfig generates the flags we pass to ssh.
+// I don't think we need to enforce some flags from being overidden: The agent
+// is just a convenience, users could override anything using ssh if they wanted.
+// All of our control lives within the SSH certificate.
+func (s *SSHClient) SSHFlagsFromConfig() []string {
+
+	if s.cfg.Host == "" || s.cfg.HostedGrafanaId == "" || s.cfg.PDCSigningToken == "" {
+		return s.cfg.Args
+	}
+
+	keyFileArr := strings.Split(s.cfg.KeyFile, "/")
+	keyFileDir := strings.Join(keyFileArr[:len(keyFileArr)-1], "/")
+
+	defaults := []string{
+		"-i",
+		s.cfg.KeyFile,
+		fmt.Sprintf("%s@%s.%s", s.cfg.Identity, s.cfg.Host, s.cfg.Domain),
+		"-p",
+		fmt.Sprintf("%d", s.cfg.Port),
+		"-R", "0",
+		"-vv",
+		"-o", fmt.Sprintf("UserKnownHostsFile=%s/known_hosts", keyFileDir),
+		"-o", fmt.Sprintf("CertificateFile=%s-cert.pub", s.cfg.KeyFile),
+	}
+
+	return defaults
+}
+
+// KeyManager manages SSH keys and certificates. It ensures that the SSH keys,
+// certificates and known_hosts files exist in their configured locations.
+type KeyManager struct {
+	*services.BasicService
+	cfg *Config
+}
+
+func NewKeyManager(cfg *Config) *KeyManager {
+	km := KeyManager{
+		cfg: cfg,
+	}
+
+	km.BasicService = services.NewIdleService(km.starting, km.stopping)
+	return &km
+}
+
+func (km *KeyManager) starting(ctx context.Context) error {
+	// if new flags are not set, do nothing.
+	if km.cfg.Host == "" || km.cfg.HostedGrafanaId == "" || km.cfg.PDCSigningToken == "" {
+		return nil
+	}
+
+	// TODO otherwise, ensure ssh keys and certificate
+	return nil
+}
+
+func (km *KeyManager) stopping(_ error) error {
+	return nil
 }

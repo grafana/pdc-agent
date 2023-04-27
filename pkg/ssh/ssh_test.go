@@ -3,6 +3,7 @@ package ssh_test
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/grafana/pdc-agent/pkg/ssh"
@@ -48,4 +49,31 @@ func newTestClient(cfg *ssh.Config) *ssh.SSHClient {
 // TestFakeSSHCmd is a test helper function that is executed by the SSH client
 func TestFakeSSHCmd(t *testing.T) {
 	assert.True(t, true)
+}
+
+// Building this out to verify behaviour, not exactly sure that the function is
+// hanging off the right struct or organised appropriately.
+func TestClient_SSHArgs(t *testing.T) {
+	t.Run("defaults", func(t *testing.T) {
+		defaultCfg := ssh.DefaultConfig()
+
+		// populate required config items with no defaults
+		defaultCfg.Identity = "test"
+		defaultCfg.Host = "host"
+		defaultCfg.HostedGrafanaId = "123"
+		defaultCfg.PDCSigningToken = "token"
+
+		result := ssh.NewClient(defaultCfg).SSHFlagsFromConfig()
+
+		assert.Equal(t, strings.Split("-i ~/.ssh/gcloud_pdc test@host.grafana.net -p 22 -R 0 -vv -o UserKnownHostsFile=~/.ssh/known_hosts -o CertificateFile=~/.ssh/gcloud_pdc-cert.pub", " "), result)
+	})
+
+	t.Run("legacy args (deprecated)", func(t *testing.T) {
+		expectedArgs := []string{"test", "ok"}
+		cfg := ssh.DefaultConfig()
+		cfg.Args = expectedArgs
+		result := ssh.NewClient(cfg).SSHFlagsFromConfig()
+
+		assert.Equal(t, expectedArgs, result)
+	})
 }
