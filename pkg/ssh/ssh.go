@@ -52,8 +52,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.SSHFlags = []string{}
 	f.Func("ssh-flag", "Additional flags to be passed to ssh. Can be set more than once.", cfg.addSSHFlag)
 	f.StringVar(&cfg.KeyFile, "ssh-key-file", def.KeyFile, "The path to the SSH key file.")
-	// This will be required when we have multiple private networks
-	// f.StringVar(&cfg.Identity, "ssh-identity", "", "The identity used for the ssh connection")
+	// Once we're on multiple networks, this can be returned by the PDC API signing request call, because it will be the network ID
+	f.StringVar(&cfg.Identity, "ssh-identity", "", "The identity used for the ssh connection. This should be your stack name")
 	f.StringVar(&cfg.HostedGrafanaId, "gcloud-hosted-grafana-id", "", "The ID of the Hosted Grafana instance to connect to")
 	f.StringVar(&cfg.PDCSigningToken, "token", "", "The token to use to authenticate with Grafana Cloud. It must have the pdc-signing:write scope")
 	f.BoolVar(&cfg.ForceKeyFileOverwrite, "force-key-file-overwrite", false, forceKeyFileOverwriteUsage)
@@ -91,6 +91,8 @@ func (s *SSHClient) starting(ctx context.Context) error {
 	log.Println("starting ssh client")
 	go func() {
 		for {
+
+			fmt.Println(s.SSHFlagsFromConfig())
 			cmd := exec.CommandContext(ctx, s.SSHCmd, s.SSHFlagsFromConfig()...)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
@@ -112,13 +114,17 @@ func (s *SSHClient) stopping(err error) error {
 	return err
 }
 
+func (s *SSHClient) legacyMode() bool {
+	return s.cfg.Host == "" || s.cfg.HostedGrafanaId == "" || s.cfg.PDCSigningToken == "" || s.cfg.Identity == ""
+}
+
 // SSHFlagsFromConfig generates the flags we pass to ssh.
 // I don't think we need to enforce some flags from being overidden: The agent
 // is just a convenience, users could override anything using ssh if they wanted.
 // All of our control lives within the SSH certificate.
 func (s *SSHClient) SSHFlagsFromConfig() []string {
 
-	if s.cfg.Host == "" || s.cfg.HostedGrafanaId == "" || s.cfg.PDCSigningToken == "" {
+	if s.legacyMode() {
 		return s.cfg.Args
 	}
 
@@ -157,6 +163,7 @@ func NewKeyManager(cfg *Config) *KeyManager {
 }
 
 func (km *KeyManager) starting(ctx context.Context) error {
+	log.Println("starting key manager")
 	// if new flags are not set, do nothing.
 	if km.cfg.Host == "" || km.cfg.HostedGrafanaId == "" || km.cfg.PDCSigningToken == "" {
 		return nil
@@ -167,5 +174,7 @@ func (km *KeyManager) starting(ctx context.Context) error {
 }
 
 func (km *KeyManager) stopping(_ error) error {
+	log.Println("stopping key manager")
+
 	return nil
 }
