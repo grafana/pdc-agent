@@ -2,6 +2,7 @@ package ssh
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/pdc-agent/pkg/pdc"
+	"golang.org/x/crypto/ssh"
 )
 
 type Config struct {
@@ -184,14 +186,94 @@ func (km KeyManager) EnsureKeysExist() error {
 
 	// check if files already exist
 
-	// if yes ->
-	// -> check cert expiry
-	// -> if OK -> do nothing
-	// -> if not OK -> regen
+	newKeysReqiured := km.newKeysRequired()
+	newCertRequired := false
+	if newKeysReqiured {
+		newCertRequired = true
 
-	// if no -> generate them
+		// TODO gen keys
+	}
 
+	if !newCertRequired {
+		newCertRequired = km.newCertRequired()
+	}
+
+	if !newCertRequired {
+		return nil
+	}
+
+	// TODO generate cert
 	return nil
+}
+
+// TODO refactor this to return the keys if valid
+func (km KeyManager) newKeysRequired() bool {
+	_, err := os.Open(km.cfg.KeyFile)
+	if errors.Is(err, os.ErrNotExist) {
+		log.Printf("private key file not found: %s\n", km.cfg.KeyFile)
+		return true
+	}
+
+	// TODO also check private key file has reasonable contents, if possible
+
+	pubKeyPath := km.cfg.KeyFile + ".pub"
+	pubKeyFile, err := os.Open(pubKeyPath)
+	if errors.Is(err, os.ErrNotExist) {
+		log.Printf("public key file not found: %s\n", pubKeyPath)
+		return true
+	}
+	pubKeyBytes := []byte{}
+	_, err = pubKeyFile.Read(pubKeyBytes)
+	if err != nil {
+		log.Println("failed to read public key file")
+		return true
+	}
+
+	_, _, _, _, err = ssh.ParseAuthorizedKey(pubKeyBytes)
+	if err != nil {
+		log.Println("failed to parse public key")
+		return true
+	}
+
+	return false
+}
+
+func (km KeyManager) newCertRequired() bool {
+	certKeyPath := km.cfg.KeyFile + "-cert.pem"
+	file, err := os.Open(certKeyPath)
+	if errors.Is(err, os.ErrNotExist) {
+		log.Printf("certificate file not found: %s\n", certKeyPath)
+		return true
+	}
+
+	b := []byte{}
+	_, err = file.Read(b)
+	if err != nil {
+		log.Println("could not read certificate file")
+		return true
+	}
+	pk, _, _, _, err := ssh.ParseAuthorizedKey(b)
+	if err != nil {
+		log.Println("file is not a public key")
+		return true
+	}
+	cert, ok := pk.(*ssh.Certificate)
+	if !ok {
+		log.Println("file is not an SSH certificate")
+		return true
+	}
+
+	if cert.ValidBefore >= uint64(time.Now().Unix()) {
+		log.Println("certificate validity has expired")
+		return true
+	}
+
+	if cert.ValidAfter < uint64(time.Now().Unix()) {
+		log.Println("certificate is not yet valid")
+		return true
+	}
+
+	return false
 }
 
 type FileReadWriter interface {
