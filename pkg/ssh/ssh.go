@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/pdc-agent/pkg/pdc"
 )
 
 type Config struct {
@@ -22,10 +23,8 @@ type Config struct {
 	ForceKeyFileOverwrite bool
 	Port                  int
 	Identity              string // Once we have multiple private networks, this will be the network name
-	Domain                string
 	HostedGrafanaId       string
-	PDCSigningToken       string
-	Host                  string // TODO consider having separate config items for gateway and api endpoints
+	PDC                   *pdc.Config
 }
 
 const forceKeyFileOverwriteUsage = `If enabled, the pdc-agent will regenerate an SSH key pair and request a new
@@ -37,9 +36,10 @@ generate a pair and request a certificate.`
 
 // DefaultConfig returns a Config with some sensible defaults set
 func DefaultConfig() *Config {
+
 	return &Config{
 		Port:    22,
-		Domain:  "grafana.net",
+		PDC:     pdc.DefaultConfig(),
 		KeyFile: "~/.ssh/gcloud_pdc",
 	}
 }
@@ -47,16 +47,12 @@ func DefaultConfig() *Config {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	def := DefaultConfig()
 
-	f.StringVar(&cfg.Host, "host", "", "The host for PDC endpoints")
-	f.StringVar(&cfg.Domain, "domain", def.Domain, "The domain for PDC endpoints")
-
 	cfg.SSHFlags = []string{}
 	f.Func("ssh-flag", "Additional flags to be passed to ssh. Can be set more than once.", cfg.addSSHFlag)
 	f.StringVar(&cfg.KeyFile, "ssh-key-file", def.KeyFile, "The path to the SSH key file.")
 	// Once we're on multiple networks, this can be returned by the PDC API signing request call, because it will be the network ID
 	f.StringVar(&cfg.Identity, "ssh-identity", "", "The identity used for the ssh connection. This should be your stack name")
 	f.StringVar(&cfg.HostedGrafanaId, "gcloud-hosted-grafana-id", "", "The ID of the Hosted Grafana instance to connect to")
-	f.StringVar(&cfg.PDCSigningToken, "token", "", "The token to use to authenticate with Grafana Cloud. It must have the pdc-signing:write scope")
 	f.BoolVar(&cfg.ForceKeyFileOverwrite, "force-key-file-overwrite", false, forceKeyFileOverwriteUsage)
 
 }
@@ -116,7 +112,7 @@ func (s *SSHClient) stopping(err error) error {
 }
 
 func (s *SSHClient) legacyMode() bool {
-	return s.cfg.Host == "" || s.cfg.HostedGrafanaId == "" || s.cfg.PDCSigningToken == "" || s.cfg.Identity == ""
+	return s.cfg.PDC.Host == "" || s.cfg.HostedGrafanaId == "" || s.cfg.Identity == ""
 }
 
 // SSHFlagsFromConfig generates the flags we pass to ssh.
@@ -135,7 +131,7 @@ func (s *SSHClient) SSHFlagsFromConfig() []string {
 	defaults := []string{
 		"-i",
 		s.cfg.KeyFile,
-		fmt.Sprintf("%s@%s.%s", s.cfg.Identity, s.cfg.Host, s.cfg.Domain),
+		fmt.Sprintf("%s@%s.%s", s.cfg.Identity, s.cfg.PDC.Host, s.cfg.PDC.Domain),
 		"-p",
 		fmt.Sprintf("%d", s.cfg.Port),
 		"-R", "0",
@@ -151,14 +147,16 @@ func (s *SSHClient) SSHFlagsFromConfig() []string {
 // certificates and known_hosts files exist in their configured locations.
 type KeyManager struct {
 	*services.BasicService
-	cfg        *Config
-	filesystem FileReadWriter
+	cfg    *Config
+	frw    FileReadWriter
+	client pdc.Client
 }
 
-func NewKeyManager(cfg *Config) *KeyManager {
+func NewKeyManager(cfg *Config, client pdc.Client) *KeyManager {
 	km := KeyManager{
-		cfg:        cfg,
-		filesystem: &OSFileReadWriter{},
+		cfg:    cfg,
+		frw:    &OSFileReadWriter{},
+		client: client,
 	}
 
 	km.BasicService = services.NewIdleService(km.starting, km.stopping)
@@ -168,12 +166,12 @@ func NewKeyManager(cfg *Config) *KeyManager {
 func (km *KeyManager) starting(ctx context.Context) error {
 	log.Println("starting key manager")
 	// if new flags are not set, do nothing.
-	if km.cfg.Host == "" || km.cfg.HostedGrafanaId == "" || km.cfg.PDCSigningToken == "" {
+	if km.cfg.PDC.Host == "" || km.cfg.HostedGrafanaId == "" {
 		return nil
 	}
 
 	// TODO otherwise, ensure ssh keys and certificate
-	return k.EnsureKeysExist()
+	return km.EnsureKeysExist()
 }
 
 func (km *KeyManager) stopping(_ error) error {
@@ -184,7 +182,14 @@ func (km *KeyManager) stopping(_ error) error {
 
 func (km KeyManager) EnsureKeysExist() error {
 
-	os.WriteFile("", []byte{}, 0666)
+	// check if files already exist
+
+	// if yes ->
+	// -> check cert expiry
+	// -> if OK -> do nothing
+	// -> if not OK -> regen
+
+	// if no -> generate them
 
 	return nil
 }

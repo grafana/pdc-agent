@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/pdc-agent/pkg/pdc"
 	"github.com/grafana/pdc-agent/pkg/ssh"
 )
 
@@ -24,12 +25,14 @@ func main() {
 
 	sshConfig := ssh.DefaultConfig()
 	mf := &mainFlags{}
+	pdcClientCfg := &pdc.Config{}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	usageFn, err := parseFlags(mf.RegisterFlags, sshConfig.RegisterFlags)
+	usageFn, err := parseFlags(mf.RegisterFlags, sshConfig.RegisterFlags, pdcClientCfg.RegisterFlags)
 	if err != nil {
+		// TODO we can do better here: detect legacy mode before trying to parse flags
 		fmt.Println("pdc-agent running in legacy mode. All arguments will be passed directly to the ssh binary.")
 	}
 
@@ -40,7 +43,9 @@ func main() {
 
 	sshConfig.Args = os.Args[1:]
 
-	km := ssh.NewKeyManager(sshConfig)
+	pdcClient := pdc.NewClient(pdcClientCfg)
+
+	km := ssh.NewKeyManager(sshConfig, pdcClient)
 	services.StartAndAwaitRunning(ctx, km)
 
 	// Whilst KeyManager is not passed to SSHClient, we need KM to have run before SSHClient is running.

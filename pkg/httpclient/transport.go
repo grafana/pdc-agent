@@ -1,0 +1,23 @@
+package httpclient
+
+import (
+	"net/http"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+)
+
+func UserAgentTransport(rt http.RoundTripper) http.RoundTripper {
+	if rt == nil {
+		rt = http.DefaultTransport
+	}
+
+	ua := "pdc-httpclient pdc-agent"
+	tr := promhttp.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		if req.UserAgent() == "" {
+			req.Header.Set("User-Agent", ua)
+		}
+		return rt.RoundTrip(req)
+	})
+
+	return tr
+}

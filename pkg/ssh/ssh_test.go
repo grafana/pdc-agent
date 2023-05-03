@@ -60,9 +60,8 @@ func TestClient_SSHArgs(t *testing.T) {
 
 		// populate required config items with no defaults
 		defaultCfg.Identity = "test"
-		defaultCfg.Host = "host"
+		defaultCfg.PDC.Host = "host"
 		defaultCfg.HostedGrafanaId = "123"
-		defaultCfg.PDCSigningToken = "token"
 
 		result := ssh.NewClient(defaultCfg).SSHFlagsFromConfig()
 
