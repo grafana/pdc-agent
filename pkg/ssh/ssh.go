@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"os/exec"
@@ -150,12 +151,14 @@ func (s *SSHClient) SSHFlagsFromConfig() []string {
 // certificates and known_hosts files exist in their configured locations.
 type KeyManager struct {
 	*services.BasicService
-	cfg *Config
+	cfg        *Config
+	filesystem FileReadWriter
 }
 
 func NewKeyManager(cfg *Config) *KeyManager {
 	km := KeyManager{
-		cfg: cfg,
+		cfg:        cfg,
+		filesystem: &OSFileReadWriter{},
 	}
 
 	km.BasicService = services.NewIdleService(km.starting, km.stopping)
@@ -170,11 +173,34 @@ func (km *KeyManager) starting(ctx context.Context) error {
 	}
 
 	// TODO otherwise, ensure ssh keys and certificate
-	return nil
+	return k.EnsureKeysExist()
 }
 
 func (km *KeyManager) stopping(_ error) error {
 	log.Println("stopping key manager")
 
 	return nil
+}
+
+func (km KeyManager) EnsureKeysExist() error {
+
+	os.WriteFile("", []byte{}, 0666)
+
+	return nil
+}
+
+type FileReadWriter interface {
+	WriteFile(name string, data []byte, perm fs.FileMode) error
+	ReadFile(name string) ([]byte, error)
+}
+
+type OSFileReadWriter struct {
+}
+
+func (f OSFileReadWriter) ReadFile(name string) ([]byte, error) {
+	return os.ReadFile(name)
+}
+
+func (f *OSFileReadWriter) WriteFile(name string, data []byte, perm fs.FileMode) error {
+	return os.WriteFile(name, data, perm)
 }

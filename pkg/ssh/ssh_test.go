@@ -2,6 +2,7 @@ package ssh_test
 
 import (
 	"context"
+	"io/fs"
 	"os"
 	"strings"
 	"testing"
@@ -76,4 +77,18 @@ func TestClient_SSHArgs(t *testing.T) {
 
 		assert.Equal(t, expectedArgs, result)
 	})
+}
+
+// mockFileReadWriter implements ssh.FileReadWriter
+type mockFileReadWriter struct {
+	data map[string][]byte
+}
+
+func (m mockFileReadWriter) ReadFile(name string) ([]byte, error) {
+	return m.data[name], nil
+}
+
+func (m *mockFileReadWriter) WriteFile(name string, data []byte, perm fs.FileMode) error {
+	m.data[name] = data
+	return nil
 }
