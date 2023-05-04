@@ -25,7 +25,6 @@ type Config struct {
 	ForceKeyFileOverwrite bool
 	Port                  int
 	Identity              string // Once we have multiple private networks, this will be the network name
-	HostedGrafanaId       string
 	PDC                   *pdc.Config
 }
 
@@ -54,7 +53,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.KeyFile, "ssh-key-file", def.KeyFile, "The path to the SSH key file.")
 	// Once we're on multiple networks, this can be returned by the PDC API signing request call, because it will be the network ID
 	f.StringVar(&cfg.Identity, "ssh-identity", "", "The identity used for the ssh connection. This should be your stack name")
-	f.StringVar(&cfg.HostedGrafanaId, "gcloud-hosted-grafana-id", "", "The ID of the Hosted Grafana instance to connect to")
 	f.BoolVar(&cfg.ForceKeyFileOverwrite, "force-key-file-overwrite", false, forceKeyFileOverwriteUsage)
 
 }
@@ -79,7 +77,7 @@ func NewClient(cfg *Config) *SSHClient {
 	// Set the Identity to the HG ID for now. When we have multiple private
 	// networks, the Identity will be the network ID.
 	if cfg.Identity == "" {
-		cfg.Identity = cfg.HostedGrafanaId
+		cfg.Identity = cfg.PDC.HostedGrafanaId
 	}
 
 	client.BasicService = services.NewIdleService(client.starting, client.stopping)
@@ -121,7 +119,7 @@ func (s *SSHClient) stopping(err error) error {
 }
 
 func (s *SSHClient) legacyMode() bool {
-	return s.cfg.PDC.Host == "" || s.cfg.HostedGrafanaId == "" || s.cfg.Identity == ""
+	return s.cfg.PDC.Host == "" || s.cfg.PDC.HostedGrafanaId == "" || s.cfg.Identity == ""
 }
 
 // SSHFlagsFromConfig generates the flags we pass to ssh.
@@ -178,7 +176,7 @@ func NewKeyManager(cfg *Config, client pdc.Client) *KeyManager {
 func (km *KeyManager) starting(ctx context.Context) error {
 	log.Println("starting key manager")
 	// if new flags are not set, do nothing.
-	if km.cfg.PDC.Host == "" || km.cfg.HostedGrafanaId == "" {
+	if km.cfg.PDC.Host == "" || km.cfg.PDC.HostedGrafanaId == "" {
 		return nil
 	}
 
