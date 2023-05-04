@@ -28,8 +28,8 @@ var (
 )
 
 type Config struct {
-	Host            string // Also required in SSH Client
-	Domain          string // Also required in SSH client
+	Host            string
+	Domain          string
 	Token           string
 	HostedGrafanaId string
 }

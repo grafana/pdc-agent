@@ -2,19 +2,17 @@ package ssh
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
-	"io/fs"
 	"log"
 	"os"
 	"os/exec"
+	"path"
 	"strings"
 	"time"
 
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/pdc-agent/pkg/pdc"
-	"golang.org/x/crypto/ssh"
 )
 
 type Config struct {
@@ -55,6 +53,11 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.Identity, "ssh-identity", "", "The identity used for the ssh connection. This should be your stack name")
 	f.BoolVar(&cfg.ForceKeyFileOverwrite, "force-key-file-overwrite", false, forceKeyFileOverwriteUsage)
 
+}
+
+func (cfg Config) KeyFileDir() string {
+	dir, _ := path.Split(cfg.KeyFile)
+	return dir
 }
 
 func (cfg *Config) addSSHFlag(flag string) error {
@@ -151,151 +154,4 @@ func (s *SSHClient) SSHFlagsFromConfig() ([]string, error) {
 	}
 
 	return result, nil
-}
-
-// KeyManager manages SSH keys and certificates. It ensures that the SSH keys,
-// certificates and known_hosts files exist in their configured locations.
-type KeyManager struct {
-	*services.BasicService
-	cfg    *Config
-	frw    FileReadWriter
-	client pdc.Client
-}
-
-func NewKeyManager(cfg *Config, client pdc.Client) *KeyManager {
-	km := KeyManager{
-		cfg:    cfg,
-		frw:    &OSFileReadWriter{},
-		client: client,
-	}
-
-	km.BasicService = services.NewIdleService(km.starting, km.stopping)
-	return &km
-}
-
-func (km *KeyManager) starting(ctx context.Context) error {
-	log.Println("starting key manager")
-	// if new flags are not set, do nothing.
-	if km.cfg.PDC.Host == "" || km.cfg.PDC.HostedGrafanaId == "" {
-		return nil
-	}
-
-	// TODO otherwise, ensure ssh keys and certificate
-	return km.EnsureKeysExist()
-}
-
-func (km *KeyManager) stopping(_ error) error {
-	log.Println("stopping key manager")
-
-	return nil
-}
-
-func (km KeyManager) EnsureKeysExist() error {
-
-	// check if files already exist
-
-	newKeysReqiured := km.newKeysRequired()
-	newCertRequired := false
-	if newKeysReqiured {
-		newCertRequired = true
-
-		// TODO gen keys
-	}
-
-	if !newCertRequired {
-		newCertRequired = km.newCertRequired()
-	}
-
-	if !newCertRequired {
-		return nil
-	}
-
-	// TODO generate cert
-	return nil
-}
-
-// TODO refactor this to return the keys if valid
-func (km KeyManager) newKeysRequired() bool {
-	_, err := os.Open(km.cfg.KeyFile)
-	if errors.Is(err, os.ErrNotExist) {
-		log.Printf("private key file not found: %s\n", km.cfg.KeyFile)
-		return true
-	}
-
-	// TODO also check private key file has reasonable contents, if possible
-
-	pubKeyPath := km.cfg.KeyFile + ".pub"
-	pubKeyFile, err := os.Open(pubKeyPath)
-	if errors.Is(err, os.ErrNotExist) {
-		log.Printf("public key file not found: %s\n", pubKeyPath)
-		return true
-	}
-	pubKeyBytes := []byte{}
-	_, err = pubKeyFile.Read(pubKeyBytes)
-	if err != nil {
-		log.Println("failed to read public key file")
-		return true
-	}
-
-	_, _, _, _, err = ssh.ParseAuthorizedKey(pubKeyBytes)
-	if err != nil {
-		log.Println("failed to parse public key")
-		return true
-	}
-
-	return false
-}
-
-func (km KeyManager) newCertRequired() bool {
-	certKeyPath := km.cfg.KeyFile + "-cert.pem"
-	file, err := os.Open(certKeyPath)
-	if errors.Is(err, os.ErrNotExist) {
-		log.Printf("certificate file not found: %s\n", certKeyPath)
-		return true
-	}
-
-	b := []byte{}
-	_, err = file.Read(b)
-	if err != nil {
-		log.Println("could not read certificate file")
-		return true
-	}
-	pk, _, _, _, err := ssh.ParseAuthorizedKey(b)
-	if err != nil {
-		log.Println("file is not a public key")
-		return true
-	}
-	cert, ok := pk.(*ssh.Certificate)
-	if !ok {
-		log.Println("file is not an SSH certificate")
-		return true
-	}
-
-	if cert.ValidBefore >= uint64(time.Now().Unix()) {
-		log.Println("certificate validity has expired")
-		return true
-	}
-
-	if cert.ValidAfter < uint64(time.Now().Unix()) {
-		log.Println("certificate is not yet valid")
-		return true
-	}
-
-	return false
-}
-
-type FileReadWriter interface {
-	WriteFile(name string, data []byte, perm fs.FileMode) error
-	ReadFile(name string) ([]byte, error)
-}
-
-type OSFileReadWriter struct {
-}
-
-func (f OSFileReadWriter) ReadFile(name string) ([]byte, error) {
-	return os.ReadFile(name)
-}
-
-func (f *OSFileReadWriter) WriteFile(name string, data []byte, perm fs.FileMode) error {
-	return os.WriteFile(name, data, perm)
 }

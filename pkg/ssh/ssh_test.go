@@ -2,7 +2,6 @@ package ssh_test
 
 import (
 	"context"
-	"io/fs"
 	"os"
 	"strings"
 	"testing"
@@ -61,10 +60,11 @@ func TestClient_SSHArgs(t *testing.T) {
 		// populate required config items with no defaults
 		defaultCfg.Identity = "test"
 		defaultCfg.PDC.Host = "host"
-		defaultCfg.HostedGrafanaId = "123"
+		defaultCfg.PDC.HostedGrafanaId = "123"
 
-		result := ssh.NewClient(defaultCfg).SSHFlagsFromConfig()
+		result, err := ssh.NewClient(defaultCfg).SSHFlagsFromConfig()
 
+		assert.Nil(t, err)
 		assert.Equal(t, strings.Split("-i ~/.ssh/gcloud_pdc test@host.grafana.net -p 22 -R 0 -vv -o UserKnownHostsFile=~/.ssh/known_hosts -o CertificateFile=~/.ssh/gcloud_pdc-cert.pub", " "), result)
 	})
 
@@ -72,22 +72,9 @@ func TestClient_SSHArgs(t *testing.T) {
 		expectedArgs := []string{"test", "ok"}
 		cfg := ssh.DefaultConfig()
 		cfg.Args = expectedArgs
-		result := ssh.NewClient(cfg).SSHFlagsFromConfig()
+		result, err := ssh.NewClient(cfg).SSHFlagsFromConfig()
 
+		assert.Nil(t, err)
 		assert.Equal(t, expectedArgs, result)
 	})
-}
-
-// mockFileReadWriter implements ssh.FileReadWriter
-type mockFileReadWriter struct {
-	data map[string][]byte
-}
-
-func (m mockFileReadWriter) ReadFile(name string) ([]byte, error) {
-	return m.data[name], nil
-}
-
-func (m *mockFileReadWriter) WriteFile(name string, data []byte, perm fs.FileMode) error {
-	m.data[name] = data
-	return nil
 }
