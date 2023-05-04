@@ -42,6 +42,7 @@ func main() {
 	}
 
 	sshConfig.Args = os.Args[1:]
+	sshConfig.PDC = pdcClientCfg
 
 	pdcClient := pdc.NewClient(pdcClientCfg)
 

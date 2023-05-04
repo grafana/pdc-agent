@@ -91,8 +91,15 @@ func (s *SSHClient) starting(ctx context.Context) error {
 	go func() {
 		for {
 
-			fmt.Println(s.SSHFlagsFromConfig())
-			cmd := exec.CommandContext(ctx, s.SSHCmd, s.SSHFlagsFromConfig()...)
+			flags, err := s.SSHFlagsFromConfig()
+			if err != nil {
+				log.Printf("could not parse flags: %s\n", err)
+				return
+			}
+
+			log.Println("parsed flags;")
+			log.Println(s.SSHFlagsFromConfig())
+			cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			cmd.Run()
@@ -121,19 +128,22 @@ func (s *SSHClient) legacyMode() bool {
 // I don't think we need to enforce some flags from being overidden: The agent
 // is just a convenience, users could override anything using ssh if they wanted.
 // All of our control lives within the SSH certificate.
-func (s *SSHClient) SSHFlagsFromConfig() []string {
+func (s *SSHClient) SSHFlagsFromConfig() ([]string, error) {
 
 	if s.legacyMode() {
-		return s.cfg.Args
+		log.Println("running in legacy mode")
+		log.Printf("%+v \n %+v", s.cfg, *s.cfg.PDC)
+		return s.cfg.Args, nil
 	}
 
 	keyFileArr := strings.Split(s.cfg.KeyFile, "/")
 	keyFileDir := strings.Join(keyFileArr[:len(keyFileArr)-1], "/")
 
-	defaults := []string{
+	gwURL, _ := s.cfg.PDC.GatewayURL()
+	result := []string{
 		"-i",
 		s.cfg.KeyFile,
-		fmt.Sprintf("%s@%s.%s", s.cfg.Identity, s.cfg.PDC.Host, s.cfg.PDC.Domain),
+		fmt.Sprintf("%s@%s", s.cfg.Identity, gwURL.String()),
 		"-p",
 		fmt.Sprintf("%d", s.cfg.Port),
 		"-R", "0",
@@ -142,7 +152,7 @@ func (s *SSHClient) SSHFlagsFromConfig() []string {
 		"-o", fmt.Sprintf("CertificateFile=%s-cert.pub", s.cfg.KeyFile),
 	}
 
-	return defaults
+	return result, nil
 }
 
 // KeyManager manages SSH keys and certificates. It ensures that the SSH keys,
