@@ -71,7 +71,7 @@ func (cfg *Config) APIURL() (*url.URL, error) {
 }
 
 func (cfg *Config) GatewayURL() (*url.URL, error) {
-	url, err := url.Parse("https://" + cfg.Host + "." + cfg.Domain)
+	url, err := url.Parse(cfg.Host + "." + cfg.Domain)
 	if err != nil {
 		return nil, err
 	}

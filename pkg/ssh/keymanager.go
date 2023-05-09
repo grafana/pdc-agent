@@ -155,6 +155,8 @@ func (km KeyManager) newCertRequired() bool {
 		return true
 	}
 
+	log.Println("reusing existing valid certificate")
+
 	return false
 }
 
@@ -229,17 +231,17 @@ func (km KeyManager) writeKeyFile(data []byte) error {
 
 func (km KeyManager) writePubKeyFile(data []byte) error {
 	path := km.cfg.KeyFile + ".pub"
-	return km.frw.WriteFile(path, data, 0600)
+	return km.frw.WriteFile(path, data, 0644)
 }
 
 func (km KeyManager) writeKnownHostsFile(data []byte) error {
 	path := path.Join(km.cfg.KeyFileDir(), "known_hosts")
-	return km.frw.WriteFile(path, data, 0600)
+	return km.frw.WriteFile(path, data, 0644)
 }
 
 func (km KeyManager) writeCertFile(data []byte) error {
 	path := path.Join(km.cfg.KeyFile + "-cert.pub")
-	return km.frw.WriteFile(path, data, 0600)
+	return km.frw.WriteFile(path, data, 0644)
 }
 
 type FileReadWriter interface {
