@@ -32,6 +32,8 @@ type Config struct {
 	Domain          string
 	Token           string
 	HostedGrafanaId string
+	API             *url.URL
+	Gateway         *url.URL
 }
 
 func DefaultConfig() *Config {
@@ -49,6 +51,10 @@ func (cfg *Config) RegisterFlags(fs *flag.FlagSet) {
 }
 
 func (cfg *Config) APIURL() (*url.URL, error) {
+	if cfg.API != nil {
+		return cfg.API, nil
+	}
+
 	prefix := "private-datasource-connect"
 	cluster, found := strings.CutPrefix(cfg.Host, prefix)
 	if !found {
@@ -56,11 +62,21 @@ func (cfg *Config) APIURL() (*url.URL, error) {
 		return url.Parse(cfg.Host + "." + cfg.Domain)
 	}
 	// add "-api" into hostname between private-datasource-connect and cluster
-	return url.Parse(prefix + "-api" + cluster + "." + cfg.Domain)
+	url, err := url.Parse("https://" + prefix + "-api" + cluster + "." + cfg.Domain)
+	if err != nil {
+		return nil, err
+	}
+	cfg.API = url
+	return cfg.API, nil
 }
 
 func (cfg *Config) GatewayURL() (*url.URL, error) {
-	return url.Parse(cfg.Host + "." + cfg.Domain)
+	url, err := url.Parse("https://" + cfg.Host + "." + cfg.Domain)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Gateway = url
+	return cfg.Gateway, nil
 }
 
 type Client interface {
@@ -74,8 +90,8 @@ type SigningResponse struct {
 
 func (sr *SigningResponse) UnmarshalJSON(data []byte) error {
 	target := struct {
-		Certificate string          `json:"certificate"`
-		KnownHosts  json.RawMessage `json:"known_hosts"`
+		Certificate string `json:"certificate"`
+		KnownHosts  string `json:"known_hosts"`
 	}{}
 
 	dec := json.NewDecoder(bytes.NewReader(data))
@@ -102,7 +118,7 @@ func (sr *SigningResponse) UnmarshalJSON(data []byte) error {
 		return errors.New("public key is not an SSH certificate")
 	}
 
-	sr.KnownHosts = target.KnownHosts
+	sr.KnownHosts = []byte(target.KnownHosts)
 	sr.Certificate = *cert
 	return nil
 }
@@ -112,6 +128,8 @@ func NewClient(cfg *Config) (Client, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	log.Printf("client URL is %s", url)
 
 	return &pdcClient{
 		cfg:        cfg,
@@ -127,7 +145,7 @@ type pdcClient struct {
 }
 
 func (c *pdcClient) SignSSHKey(ctx context.Context, key []byte) (*SigningResponse, error) {
-	resp, err := c.call(ctx, http.MethodPost, "/pdc/api/v1/sign-public-key", map[string]string{
+	resp, err := c.call(ctx, http.MethodPost, "/pdc/api/v1/sign-public-key", nil, map[string]string{
 		"publicKey": string(key),
 	})
 	if err != nil {
@@ -143,7 +161,7 @@ func (c *pdcClient) SignSSHKey(ctx context.Context, key []byte) (*SigningRespons
 	return sr, nil
 }
 
-func (c *pdcClient) call(ctx context.Context, method, rpath string, params map[string]string) ([]byte, error) {
+func (c *pdcClient) call(ctx context.Context, method, rpath string, params map[string]string, body map[string]string) ([]byte, error) {
 
 	url := *c.url
 	url.Path = path.Join(url.Path, rpath)
@@ -154,9 +172,15 @@ func (c *pdcClient) call(ctx context.Context, method, rpath string, params map[s
 	}
 	url.RawQuery = q.Encode()
 
-	// Prepare the request
-	req, err := http.NewRequestWithContext(ctx, method, url.String(), nil)
+	jsonB, err := json.Marshal(body)
 	if err != nil {
+		return nil, err
+	}
+
+	// Prepare the request
+	req, err := http.NewRequestWithContext(ctx, method, url.String(), bytes.NewBuffer(jsonB))
+	if err != nil {
+		log.Println("error creating request")
 		return nil, ErrInternal
 	}
 
@@ -171,25 +195,29 @@ func (c *pdcClient) call(ctx context.Context, method, rpath string, params map[s
 		return nil, err
 	}
 
+	log.Printf("auth header: %s", buf.String())
+
 	req.Header.Add("Authorization", "Basic "+buf.String())
 
-	// Call the gcom
+	// Call the PDC API
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		log.Printf("request failed: %s", err)
 		return nil, ErrInternal
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	respB, err := io.ReadAll(resp.Body)
 	if err != nil {
+		log.Printf("failed to read response: %s", err)
 		return nil, ErrInternal
 	}
 	switch resp.StatusCode {
 	case http.StatusOK:
-		return body, nil
+		return respB, nil
 	case http.StatusUnauthorized:
-		return body, ErrInvalidCredentials
+		return respB, ErrInvalidCredentials
 	default:
 		log.Println("unknown response from pdc: " + fmt.Sprintf("%d", resp.StatusCode))
-		return body, ErrInternal
+		return respB, ErrInternal
 	}
 }

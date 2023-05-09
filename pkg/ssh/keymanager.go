@@ -34,10 +34,10 @@ type KeyManager struct {
 	client pdc.Client
 }
 
-func NewKeyManager(cfg *Config, client pdc.Client) *KeyManager {
+func NewKeyManager(cfg *Config, client pdc.Client, frw FileReadWriter) *KeyManager {
 	km := KeyManager{
 		cfg:    cfg,
-		frw:    &OSFileReadWriter{},
+		frw:    frw,
 		client: client,
 	}
 
@@ -109,6 +109,7 @@ func (km KeyManager) newKeysRequired() bool {
 	_, err = x509.ParsePKCS1PrivateKey(kb)
 	if err != nil {
 		log.Println("could not parse private key file")
+		return true
 	}
 
 	pbk, err := km.readPubKeyFile()
@@ -157,6 +158,7 @@ func (km KeyManager) newCertRequired() bool {
 }
 
 func (km KeyManager) generateKeyPair() error {
+
 	privKey, err := rsa.GenerateKey(rand.Reader, SSHKeySize)
 	if err != nil {
 		return err
@@ -186,6 +188,7 @@ func (km KeyManager) generateKeyPair() error {
 }
 
 func (km KeyManager) generateCert() error {
+	log.Printf("generating certificate")
 
 	pbk, err := km.readPubKeyFile()
 	if err != nil {

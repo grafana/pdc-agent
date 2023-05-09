@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -44,10 +45,16 @@ func main() {
 	sshConfig.Args = os.Args[1:]
 	sshConfig.PDC = pdcClientCfg
 
-	pdcClient := pdc.NewClient(pdcClientCfg)
+	pdcClient, err := pdc.NewClient(pdcClientCfg)
+	if err != nil {
+		log.Fatalf("cannot initialise PDC client: %s", err)
+	}
 
-	km := ssh.NewKeyManager(sshConfig, pdcClient)
-	services.StartAndAwaitRunning(ctx, km)
+	km := ssh.NewKeyManager(sshConfig, pdcClient, &ssh.OSFileReadWriter{})
+	err = services.StartAndAwaitRunning(ctx, km)
+	if err != nil {
+		log.Fatalf("cannot start key manager: %s", err.Error())
+	}
 
 	// Whilst KeyManager is not passed to SSHClient, we need KM to have run before SSHClient is running.
 	// TODO add dskit module manager to we can have a more formal dependency map
