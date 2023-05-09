@@ -1,11 +1,9 @@
 package ssh
 
 import (
-	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -17,6 +15,7 @@ import (
 
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/pdc-agent/pkg/pdc"
+	"github.com/mikesmitty/edkey"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -106,9 +105,9 @@ func (km KeyManager) newKeysRequired() bool {
 		return true
 	}
 
-	_, err = x509.ParsePKCS1PrivateKey(kb)
-	if err != nil {
-		log.Println("could not parse private key file")
+	block, _ := pem.Decode(kb)
+	if block == nil {
+		log.Println("could not parse private key PEM file")
 		return true
 	}
 
@@ -144,12 +143,14 @@ func (km KeyManager) newCertRequired() bool {
 		return true
 	}
 
-	if cert.ValidBefore >= uint64(time.Now().Unix()) {
+	log.Printf("valid before: %s", time.Unix(int64(cert.ValidBefore), 0).String())
+
+	if cert.ValidBefore < uint64(time.Now().Unix()) {
 		log.Println("certificate validity has expired")
 		return true
 	}
 
-	if cert.ValidAfter < uint64(time.Now().Unix()) {
+	if cert.ValidAfter >= uint64(time.Now().Unix()) {
 		log.Println("certificate is not yet valid")
 		return true
 	}
@@ -159,32 +160,23 @@ func (km KeyManager) newCertRequired() bool {
 
 func (km KeyManager) generateKeyPair() error {
 
-	privKey, err := rsa.GenerateKey(rand.Reader, SSHKeySize)
-	if err != nil {
-		return err
-	}
+	// Generate a new private/public keypair for OpenSSH
+	pubKey, privKey, _ := ed25519.GenerateKey(rand.Reader)
+	publicKey, _ := ssh.NewPublicKey(pubKey)
 
-	signer, err := ssh.NewSignerFromKey(privKey)
-	if err != nil {
-		return err
+	pemKey := &pem.Block{
+		Type:  "OPENSSH PRIVATE KEY",
+		Bytes: edkey.MarshalED25519PrivateKey(privKey),
 	}
-	pubKey := signer.PublicKey()
+	privateKey := pem.EncodeToMemory(pemKey)
 
-	var b bytes.Buffer
-	err = pem.Encode(&b, &pem.Block{
-		Type:  "SSH PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(privKey),
-	})
-	if err != nil {
-		return err
-	}
-	err = km.writeKeyFile(b.Bytes())
+	err := km.writeKeyFile(privateKey)
 	if err != nil {
 		return err
 	}
 
 	// public key should not be in PEM format
-	return km.writePubKeyFile(ssh.MarshalAuthorizedKey(pubKey))
+	return km.writePubKeyFile(ssh.MarshalAuthorizedKey(publicKey))
 }
 
 func (km KeyManager) generateCert() error {
