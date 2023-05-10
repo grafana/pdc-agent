@@ -1,11 +1,9 @@
 package ssh_test
 
 import (
-	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
 	"io/fs"
@@ -15,13 +13,13 @@ import (
 	"net/url"
 	"testing"
 
-	gossh "golang.org/x/crypto/ssh"
-
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/pdc-agent/pkg/pdc"
 	"github.com/grafana/pdc-agent/pkg/ssh"
+	"github.com/mikesmitty/edkey"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	gossh "golang.org/x/crypto/ssh"
 )
 
 var (
@@ -142,7 +140,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
 				t.Helper()
 				_, pubKey := generateKeyPair()
-				_ = frw.WriteFile(cfg.KeyFile+".pub", []byte(`not a private key`), 0600)
+				_ = frw.WriteFile(cfg.KeyFile+".pub", []byte(`not a private key`), 0644)
 				_ = frw.WriteFile(cfg.KeyFile, pubKey, 0600)
 
 			},
@@ -154,7 +152,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				t.Helper()
 				privKey, _ := generateKeyPair()
 				_ = frw.WriteFile(cfg.KeyFile, privKey, 0600)
-				_ = frw.WriteFile(cfg.KeyFile+".pub", []byte(`not a public key`), 0600)
+				_ = frw.WriteFile(cfg.KeyFile+".pub", []byte(`not a public key`), 0644)
 			},
 			assertFn: assertExpectedFiles,
 		},
@@ -267,18 +265,19 @@ func mustParseCert(t *testing.T) []byte {
 }
 
 func generateKeyPair() ([]byte, []byte) {
-	privKey, _ := rsa.GenerateKey(rand.Reader, ssh.SSHKeySize)
 
-	var b bytes.Buffer
-	_ = pem.Encode(&b, &pem.Block{
-		Type:  "SSH PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(privKey),
-	})
+	// Generate a new private/public keypair for OpenSSH
+	pubKey, privKey, _ := ed25519.GenerateKey(rand.Reader)
+	sshPubKey, _ := gossh.NewPublicKey(pubKey)
 
-	signer, _ := gossh.NewSignerFromKey(privKey)
-	pubKey := signer.PublicKey()
+	pemKey := &pem.Block{
+		Type:  "OPENSSH PRIVATE KEY",
+		Bytes: edkey.MarshalED25519PrivateKey(privKey),
+	}
+	pemPrivKey := pem.EncodeToMemory(pemKey)
 
-	return b.Bytes(), gossh.MarshalAuthorizedKey(pubKey)
+	// public key should be in authorized_keys file format
+	return pemPrivKey, gossh.MarshalAuthorizedKey(sshPubKey)
 
 }
 
