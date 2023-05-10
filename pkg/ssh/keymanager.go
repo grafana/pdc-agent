@@ -142,20 +142,32 @@ func (km KeyManager) newCertRequired() bool {
 		log.Println("certificate is incorrect format")
 		return true
 	}
+	now := uint64(time.Now().Unix())
 
-	log.Printf("valid before: %s", time.Unix(int64(cert.ValidBefore), 0).String())
-
-	if cert.ValidBefore < uint64(time.Now().Unix()) {
+	if now > cert.ValidBefore {
 		log.Println("certificate validity has expired")
 		return true
 	}
 
-	if cert.ValidAfter >= uint64(time.Now().Unix()) {
+	if now < cert.ValidAfter {
 		log.Println("certificate is not yet valid")
 		return true
 	}
 
-	log.Println("reusing existing valid certificate")
+	log.Println("found existing valid certificate")
+
+	kh, err := km.frw.ReadFile(path.Join(km.cfg.KeyFileDir(), "known_hosts"))
+	if err != nil {
+		log.Println("cannot not read known hosts file")
+		return true
+	}
+	_, _, _, _, _, err = ssh.ParseKnownHosts(kh)
+	if err != nil {
+		log.Println("cannot parse known_hosts file")
+		return true
+	}
+
+	log.Println("found valid known_hosts file")
 
 	return false
 }

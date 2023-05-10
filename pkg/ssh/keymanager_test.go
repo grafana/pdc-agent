@@ -4,14 +4,19 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path"
 	"testing"
+	"time"
 
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/pdc-agent/pkg/pdc"
@@ -20,6 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 var (
@@ -112,49 +118,100 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 
 	   - The above when cert exists, and doesnt/invalid
 
-	   - signing request fails
-
 	*/
 
 	testcases := []struct {
-		name     string
-		setupFn  func(*testing.T, ssh.FileReadWriter, *ssh.Config)
-		wantErr  bool
-		assertFn func(*testing.T, ssh.FileReadWriter, *ssh.Config)
+		name               string
+		setupFn            func(*testing.T, ssh.FileReadWriter, *ssh.Config)
+		wantErr            bool
+		assertFn           func(*testing.T, ssh.FileReadWriter, *ssh.Config)
+		apiResponseCode    int
+		wantSigningRequest bool
 	}{
 		{
-			name:     "no key files exist: expect keys and a request to PDC for cert",
-			assertFn: assertExpectedFiles,
+			name:               "no key files exist: expect keys and a request to PDC for cert",
+			assertFn:           assertExpectedFiles,
+			wantSigningRequest: true,
 		},
 		{
 			name: "only private key file exists: expect new keys and request for cert",
 			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
 				t.Helper()
-				privKey, _ := generateKeyPair()
+				_, privKey, _, _, _ := generateKeyPair()
 				_ = frw.WriteFile(cfg.KeyFile, privKey, 0600)
 			},
-			assertFn: assertExpectedFiles,
+			assertFn:           assertExpectedFiles,
+			wantSigningRequest: true,
 		},
 		{
 			name: "both key files exist but private key is an invalid format: expect new keys and request for cert",
 			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
 				t.Helper()
-				_, pubKey := generateKeyPair()
+				_, _, pubKey, _, _ := generateKeyPair()
 				_ = frw.WriteFile(cfg.KeyFile+".pub", []byte(`not a private key`), 0644)
 				_ = frw.WriteFile(cfg.KeyFile, pubKey, 0600)
 
 			},
-			assertFn: assertExpectedFiles,
+			assertFn:           assertExpectedFiles,
+			wantSigningRequest: true,
 		},
 		{
 			name: "both key files exist but public key is an invalid format: expect new keys and request for cert",
 			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
 				t.Helper()
-				privKey, _ := generateKeyPair()
+				_, privKey, _, _, _ := generateKeyPair()
 				_ = frw.WriteFile(cfg.KeyFile, privKey, 0600)
 				_ = frw.WriteFile(cfg.KeyFile+".pub", []byte(`not a public key`), 0644)
 			},
-			assertFn: assertExpectedFiles,
+			assertFn:           assertExpectedFiles,
+			wantSigningRequest: true,
+		},
+		{
+			name:            "Signing request fails, expect error",
+			apiResponseCode: 400,
+			wantErr:         true,
+		},
+		{
+			name: "valid keys and cert, no known_hosts: call signing request",
+			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
+				t.Helper()
+				_, privKey, pubKey, cert, _ := generateKeyPair()
+				_ = frw.WriteFile(cfg.KeyFile, privKey, 0600)
+				_ = frw.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
+				_ = frw.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
+			},
+			wantSigningRequest: true,
+			assertFn:           assertExpectedFiles,
+		},
+		{
+			name: "valid keys, cert and known_hosts: no signing request",
+			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
+				t.Helper()
+				_, privKey, pubKey, cert, kh := generateKeyPair()
+				_ = frw.WriteFile(cfg.KeyFile, privKey, 0600)
+				_ = frw.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
+				_ = frw.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
+				_ = frw.WriteFile(path.Join(cfg.KeyFileDir(), "known_hosts"), kh, 06444)
+			},
+			wantSigningRequest: false,
+			assertFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
+				keyFile, err := frw.ReadFile(cfg.KeyFile)
+				assert.NoError(t, err)
+				assert.NotNil(t, keyFile)
+
+				pubKeyFile, err := frw.ReadFile(cfg.KeyFile + ".pub")
+				assert.NoError(t, err)
+				assert.NotNil(t, pubKeyFile)
+
+				kfd := cfg.KeyFileDir()
+				_, err = frw.ReadFile(path.Join(kfd, "known_hosts"))
+				assert.NoError(t, err)
+
+				cert, err := frw.ReadFile(cfg.KeyFile + "-cert.pub")
+				assert.NoError(t, err)
+				_, _, _, _, err = gossh.ParseAuthorizedKey(cert)
+				assert.NoError(t, err)
+			},
 		},
 	}
 
@@ -171,7 +228,10 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			cfg.PDC = pdcCfg
 
 			// create mock PDC server and use the URL in the pdc config
-			url := mockPDC(t, http.MethodPost, "/pdc/api/v1/sign-public-key", url.Values{}, 200)
+			if tc.apiResponseCode == 0 {
+				tc.apiResponseCode = 200
+			}
+			url, called := mockPDC(t, http.MethodPost, "/pdc/api/v1/sign-public-key", url.Values{}, tc.apiResponseCode)
 			pdcCfg.API = url
 
 			// allow test case to modify cfg and add files to frw
@@ -188,10 +248,12 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 
 			// test svc
 			if tc.wantErr {
-				assert.NotNil(t, err)
+				assert.Error(t, err)
 				return
 			}
 			require.Nil(t, err)
+
+			assert.Equal(t, tc.wantSigningRequest, *called)
 
 			tc.assertFn(t, frw, cfg)
 
@@ -220,16 +282,19 @@ func (m *mockFileReadWriter) WriteFile(path string, data []byte, perm fs.FileMod
 	return nil
 }
 
-func mockPDC(t *testing.T, method, path string, expectedParams url.Values, code int) (u *url.URL) {
+func mockPDC(t *testing.T, method, path string, expectedParams url.Values, code int) (u *url.URL, called *bool) {
 	t.Helper()
 
 	// if expectedParams == nil {
 	// 	expectedParams = url.Values{}
 	// }
 
+	called = new(bool)
+
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, method, r.Method)
 		assert.Equal(t, path, r.URL.Path)
+		*called = true
 		// q := r.URL.Query()
 
 		// assert.EqualValues(t, expectedParams, q)
@@ -253,7 +318,7 @@ func mockPDC(t *testing.T, method, path string, expectedParams url.Values, code 
 	t.Cleanup(ts.Close)
 
 	u, _ = url.Parse(ts.URL)
-	return u
+	return u, called
 }
 
 func mustParseCert(t *testing.T) []byte {
@@ -264,7 +329,13 @@ func mustParseCert(t *testing.T) []byte {
 
 }
 
-func generateKeyPair() ([]byte, []byte) {
+func generateKeyPair() ([]byte, []byte, []byte, []byte, []byte) {
+	caKey, _ := rsa.GenerateKey(rand.Reader, ssh.SSHKeySize)
+	caPem := &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(caKey),
+	}
+	caPemBytes := pem.EncodeToMemory(caPem)
 
 	// Generate a new private/public keypair for OpenSSH
 	pubKey, privKey, _ := ed25519.GenerateKey(rand.Reader)
@@ -276,27 +347,46 @@ func generateKeyPair() ([]byte, []byte) {
 	}
 	pemPrivKey := pem.EncodeToMemory(pemKey)
 
+	caSigner, _ := gossh.NewSignerFromKey(caKey)
+
+	d, _ := time.ParseDuration("1h")
+	subd, _ := time.ParseDuration("-5m")
+	cert := &gossh.Certificate{
+		Key:             sshPubKey,
+		CertType:        gossh.UserCert,
+		KeyId:           "key",
+		ValidPrincipals: []string{"key"},
+		ValidBefore:     uint64(time.Now().Add(d).Unix()),
+		ValidAfter:      uint64(time.Now().Add(subd).Unix()),
+	}
+
+	_ = cert.SignCert(rand.Reader, caSigner)
+
+	kh := knownhosts.Line([]string{"test.local.address"}, sshPubKey)
+
+	fmt.Println(kh)
+
 	// public key should be in authorized_keys file format
-	return pemPrivKey, gossh.MarshalAuthorizedKey(sshPubKey)
+	return caPemBytes, pemPrivKey, gossh.MarshalAuthorizedKey(sshPubKey), gossh.MarshalAuthorizedKey(cert), []byte(kh)
 
 }
 
 func assertExpectedFiles(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
 	keyFile, err := frw.ReadFile(cfg.KeyFile)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.NotNil(t, keyFile)
 
 	pubKeyFile, err := frw.ReadFile(cfg.KeyFile + ".pub")
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.NotNil(t, pubKeyFile)
 
 	kfd := cfg.KeyFileDir()
 	kh, err := frw.ReadFile(kfd + "known_hosts")
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, string(knownHosts), string(kh))
 
 	cert, err := frw.ReadFile(cfg.KeyFile + "-cert.pub")
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, mustParseCert(t), cert)
 
 }
