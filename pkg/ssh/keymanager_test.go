@@ -108,18 +108,6 @@ func TestKeyManager_StartingAndStopping(t *testing.T) {
 }
 
 func TestKeyManager_EnsureKeysExist(t *testing.T) {
-	// test cases:
-	/*
-	   - key and pubkey exist, but pub key is invalid for:
-	   	- validBefore
-	   	- validAfter
-	   	- ??
-	   - key and pubkey exist, and are valid.
-
-	   - The above when cert exists, and doesnt/invalid
-
-	*/
-
 	testcases := []struct {
 		name               string
 		setupFn            func(*testing.T, ssh.FileReadWriter, *ssh.Config)
@@ -137,7 +125,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			name: "only private key file exists: expect new keys and request for cert",
 			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
 				t.Helper()
-				_, privKey, _, _, _ := generateKeyPair()
+				_, privKey, _, _, _ := generateKeyPair("", "")
 				_ = frw.WriteFile(cfg.KeyFile, privKey, 0600)
 			},
 			assertFn:           assertExpectedFiles,
@@ -147,7 +135,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			name: "both key files exist but private key is an invalid format: expect new keys and request for cert",
 			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
 				t.Helper()
-				_, _, pubKey, _, _ := generateKeyPair()
+				_, _, pubKey, _, _ := generateKeyPair("", "")
 				_ = frw.WriteFile(cfg.KeyFile+".pub", []byte(`not a private key`), 0644)
 				_ = frw.WriteFile(cfg.KeyFile, pubKey, 0600)
 
@@ -159,7 +147,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			name: "both key files exist but public key is an invalid format: expect new keys and request for cert",
 			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
 				t.Helper()
-				_, privKey, _, _, _ := generateKeyPair()
+				_, privKey, _, _, _ := generateKeyPair("", "")
 				_ = frw.WriteFile(cfg.KeyFile, privKey, 0600)
 				_ = frw.WriteFile(cfg.KeyFile+".pub", []byte(`not a public key`), 0644)
 			},
@@ -175,7 +163,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			name: "valid keys and cert, no known_hosts: call signing request",
 			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
 				t.Helper()
-				_, privKey, pubKey, cert, _ := generateKeyPair()
+				_, privKey, pubKey, cert, _ := generateKeyPair("", "")
 				_ = frw.WriteFile(cfg.KeyFile, privKey, 0600)
 				_ = frw.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
 				_ = frw.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
@@ -187,7 +175,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			name: "valid keys, cert and known_hosts: no signing request",
 			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
 				t.Helper()
-				_, privKey, pubKey, cert, kh := generateKeyPair()
+				_, privKey, pubKey, cert, kh := generateKeyPair("", "")
 				_ = frw.WriteFile(cfg.KeyFile, privKey, 0600)
 				_ = frw.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
 				_ = frw.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
@@ -212,6 +200,20 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				_, _, _, _, err = gossh.ParseAuthorizedKey(cert)
 				assert.NoError(t, err)
 			},
+		},
+		{
+			name: "cert outside validity window: expect signing request",
+			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
+				t.Helper()
+				// gen cert with validity period in the past
+				_, privKey, pubKey, cert, kh := generateKeyPair("-10m", "-1h")
+				_ = frw.WriteFile(cfg.KeyFile, privKey, 0600)
+				_ = frw.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
+				_ = frw.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
+				_ = frw.WriteFile(path.Join(cfg.KeyFileDir(), "known_hosts"), kh, 06444)
+			},
+			wantSigningRequest: true,
+			assertFn:           assertExpectedFiles,
 		},
 	}
 
@@ -329,7 +331,7 @@ func mustParseCert(t *testing.T) []byte {
 
 }
 
-func generateKeyPair() ([]byte, []byte, []byte, []byte, []byte) {
+func generateKeyPair(validBeforeDur string, validAfterDur string) ([]byte, []byte, []byte, []byte, []byte) {
 	caKey, _ := rsa.GenerateKey(rand.Reader, ssh.SSHKeySize)
 	caPem := &pem.Block{
 		Type:  "RSA PRIVATE KEY",
@@ -349,8 +351,16 @@ func generateKeyPair() ([]byte, []byte, []byte, []byte, []byte) {
 
 	caSigner, _ := gossh.NewSignerFromKey(caKey)
 
-	d, _ := time.ParseDuration("1h")
-	subd, _ := time.ParseDuration("-5m")
+	if validBeforeDur == "" {
+		validBeforeDur = "1h"
+	}
+
+	if validAfterDur == "" {
+		validAfterDur = "-5m"
+	}
+
+	d, _ := time.ParseDuration(validBeforeDur)
+	subd, _ := time.ParseDuration(validAfterDur)
 	cert := &gossh.Certificate{
 		Key:             sshPubKey,
 		CertType:        gossh.UserCert,
