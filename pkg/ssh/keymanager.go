@@ -46,10 +46,6 @@ func NewKeyManager(cfg *Config, client pdc.Client, frw FileReadWriter) *KeyManag
 
 func (km *KeyManager) starting(ctx context.Context) error {
 	log.Println("starting key manager")
-	// if new flags are not set, do nothing.
-	if km.cfg.PDC == nil || km.cfg.PDC.Host == "" || km.cfg.PDC.HostedGrafanaId == "" {
-		return nil
-	}
 
 	newCertRequired, err := km.ensureKeysExist()
 	if err != nil {

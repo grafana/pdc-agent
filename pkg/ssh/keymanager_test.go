@@ -224,8 +224,6 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			// create default configs
 			frw := newEmptyFileReadWriter()
 			pdcCfg := pdc.DefaultConfig()
-			pdcCfg.Host = "test"           // needed to get past legacy flags check
-			pdcCfg.HostedGrafanaId = "123" // needed to get past legacy flags check
 			cfg := ssh.DefaultConfig()
 			cfg.PDC = pdcCfg
 

@@ -23,6 +23,7 @@ type Config struct {
 	ForceKeyFileOverwrite bool
 	Port                  int
 	PDC                   *pdc.Config
+	LegacyMode            bool
 }
 
 const forceKeyFileOverwriteUsage = `If enabled, the pdc-agent will regenerate an SSH key pair and request a new
@@ -112,17 +113,13 @@ func (s *SSHClient) stopping(err error) error {
 	return err
 }
 
-func (s *SSHClient) legacyMode() bool {
-	return s.cfg.PDC.Host == "" || s.cfg.PDC.HostedGrafanaId == ""
-}
-
 // SSHFlagsFromConfig generates the flags we pass to ssh.
 // I don't think we need to enforce some flags from being overidden: The agent
 // is just a convenience, users could override anything using ssh if they wanted.
 // All of our control lives within the SSH certificate.
 func (s *SSHClient) SSHFlagsFromConfig() ([]string, error) {
 
-	if s.legacyMode() {
+	if s.cfg.LegacyMode {
 		log.Println("running in legacy mode")
 		log.Printf("%+v \n %+v", s.cfg, *s.cfg.PDC)
 		return s.cfg.Args, nil

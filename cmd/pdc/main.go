@@ -31,10 +31,17 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	sshConfig.Args = os.Args[1:]
+
+	if inLegacyMode() {
+		sshConfig.LegacyMode = true
+		runLegacyMode(ctx, sshConfig)
+		return
+	}
+
 	usageFn, err := parseFlags(mf.RegisterFlags, sshConfig.RegisterFlags, pdcClientCfg.RegisterFlags)
 	if err != nil {
-		// TODO we can do better here: detect legacy mode before trying to parse flags
-		fmt.Println("pdc-agent running in legacy mode. All arguments will be passed directly to the ssh binary.")
+		log.Fatal("cannot parse flags")
 	}
 
 	if mf.PrintHelp {
@@ -42,7 +49,6 @@ func main() {
 		return
 	}
 
-	sshConfig.Args = os.Args[1:]
 	sshConfig.PDC = pdcClientCfg
 
 	pdcClient, err := pdc.NewClient(pdcClientCfg)
@@ -82,7 +88,7 @@ func parseFlags(registerers ...func(fs *flag.FlagSet)) (func(), error) {
 		fs.PrintDefaults()
 		fmt.Fprintf(fs.Output(), `
 
-If pdc-agent encounters a flag parsing error, it will run in legacy mode, where the arguments are passed directly to ssh.
+If pdc-agent is run with SSH flags, it will pass all arguments directly through to the "ssh" binary. This is deprecated behaviour.
 
 Run %s <command> -h for more information
 `, prog)
@@ -93,4 +99,26 @@ Run %s <command> -h for more information
 	}
 
 	return fs.Usage, fs.Parse(os.Args[1:])
+}
+
+func inLegacyMode() bool {
+	args := os.Args[1:]
+
+	for _, a := range args {
+		log.Println(a)
+		if a == "-p" || a == "-i" || a == "-R" || a == "-o" {
+			return true
+		}
+	}
+
+	return false
+}
+
+func runLegacyMode(ctx context.Context, sshConfig *ssh.Config) {
+	sshClient := ssh.NewClient(sshConfig)
+	// Start the ssh client
+	services.StartAndAwaitRunning(ctx, sshClient)
+
+	// Wait for the ssh client to exit
+	sshClient.AwaitTerminated(context.Background())
 }
