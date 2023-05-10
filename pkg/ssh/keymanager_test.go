@@ -108,6 +108,9 @@ func TestKeyManager_StartingAndStopping(t *testing.T) {
 }
 
 func TestKeyManager_EnsureKeysExist(t *testing.T) {
+	// remaining test cases:
+	// - cannot parse known_hosts
+
 	testcases := []struct {
 		name               string
 		setupFn            func(*testing.T, ssh.FileReadWriter, *ssh.Config)
@@ -131,6 +134,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			assertFn:           assertExpectedFiles,
 			wantSigningRequest: true,
 		},
+		// TODO update so all other files are present
 		{
 			name: "both key files exist but private key is an invalid format: expect new keys and request for cert",
 			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
@@ -143,6 +147,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			assertFn:           assertExpectedFiles,
 			wantSigningRequest: true,
 		},
+		// TODO update so all other expected files are present
 		{
 			name: "both key files exist but public key is an invalid format: expect new keys and request for cert",
 			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
@@ -159,6 +164,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			apiResponseCode: 400,
 			wantErr:         true,
 		},
+		// TODO update so all other expected files are present
 		{
 			name: "valid keys and cert, no known_hosts: call signing request",
 			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
@@ -231,7 +237,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			if tc.apiResponseCode == 0 {
 				tc.apiResponseCode = 200
 			}
-			url, called := mockPDC(t, http.MethodPost, "/pdc/api/v1/sign-public-key", url.Values{}, tc.apiResponseCode)
+			url, called := mockPDC(t, http.MethodPost, "/pdc/api/v1/sign-public-key", tc.apiResponseCode)
 			pdcCfg.API = url
 
 			// allow test case to modify cfg and add files to frw
@@ -282,12 +288,8 @@ func (m *mockFileReadWriter) WriteFile(path string, data []byte, perm fs.FileMod
 	return nil
 }
 
-func mockPDC(t *testing.T, method, path string, expectedParams url.Values, code int) (u *url.URL, called *bool) {
+func mockPDC(t *testing.T, method, path string, code int) (u *url.URL, called *bool) {
 	t.Helper()
-
-	// if expectedParams == nil {
-	// 	expectedParams = url.Values{}
-	// }
 
 	called = new(bool)
 
@@ -295,10 +297,6 @@ func mockPDC(t *testing.T, method, path string, expectedParams url.Values, code 
 		assert.Equal(t, method, r.Method)
 		assert.Equal(t, path, r.URL.Path)
 		*called = true
-		// q := r.URL.Query()
-
-		// assert.EqualValues(t, expectedParams, q)
-		// assert.Equal(t, "Basic "+authToken, r.Header.Get("Authorization")) // TODO need encoding
 
 		resp := struct {
 			KnownHosts  string `json:"known_hosts"`
