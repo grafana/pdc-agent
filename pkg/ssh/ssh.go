@@ -22,7 +22,6 @@ type Config struct {
 	SSHFlags              []string // Additional flags to be passed to ssh(1). e.g. --ssh-flag="-vvv" --ssh-flag="-L 80:localhost:80"
 	ForceKeyFileOverwrite bool
 	Port                  int
-	Identity              string // Once we have multiple private networks, this will be the network name
 	PDC                   *pdc.Config
 }
 
@@ -49,8 +48,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.SSHFlags = []string{}
 	f.Func("ssh-flag", "Additional flags to be passed to ssh. Can be set more than once.", cfg.addSSHFlag)
 	f.StringVar(&cfg.KeyFile, "ssh-key-file", def.KeyFile, "The path to the SSH key file.")
-	// Once we're on multiple networks, this can be returned by the PDC API signing request call, because it will be the network ID
-	f.StringVar(&cfg.Identity, "ssh-identity", "", "The identity used for the ssh connection. This should be your stack name")
 	f.BoolVar(&cfg.ForceKeyFileOverwrite, "force-key-file-overwrite", false, forceKeyFileOverwriteUsage)
 
 }
@@ -75,12 +72,6 @@ func NewClient(cfg *Config) *SSHClient {
 	client := &SSHClient{
 		cfg:    cfg,
 		SSHCmd: "ssh",
-	}
-
-	// Set the Identity to the HG ID for now. When we have multiple private
-	// networks, the Identity will be the network ID.
-	if cfg.Identity == "" {
-		cfg.Identity = cfg.PDC.HostedGrafanaId
 	}
 
 	client.BasicService = services.NewIdleService(client.starting, client.stopping)
@@ -122,7 +113,7 @@ func (s *SSHClient) stopping(err error) error {
 }
 
 func (s *SSHClient) legacyMode() bool {
-	return s.cfg.PDC.Host == "" || s.cfg.PDC.HostedGrafanaId == "" || s.cfg.Identity == ""
+	return s.cfg.PDC.Host == "" || s.cfg.PDC.HostedGrafanaId == ""
 }
 
 // SSHFlagsFromConfig generates the flags we pass to ssh.
@@ -144,7 +135,7 @@ func (s *SSHClient) SSHFlagsFromConfig() ([]string, error) {
 	result := []string{
 		"-i",
 		s.cfg.KeyFile,
-		fmt.Sprintf("%s@%s", s.cfg.Identity, gwURL.String()),
+		fmt.Sprintf("%s@%s", s.cfg.PDC.HostedGrafanaId, gwURL.String()),
 		"-p",
 		fmt.Sprintf("%d", s.cfg.Port),
 		"-R", "0",
