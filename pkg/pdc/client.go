@@ -184,7 +184,7 @@ func (c *pdcClient) call(ctx context.Context, method, rpath string, params map[s
 		return nil, ErrInternal
 	}
 
-	// TODO base64 id:tokem
+	// base64 id:token for auth
 	b := []byte{}
 	buf := bytes.NewBuffer(b)
 	encoder := base64.NewEncoder(base64.StdEncoding, buf)
@@ -195,11 +195,8 @@ func (c *pdcClient) call(ctx context.Context, method, rpath string, params map[s
 		return nil, err
 	}
 
-	log.Printf("auth header: %s", buf.String())
-
 	req.Header.Add("Authorization", "Basic "+buf.String())
 
-	// Call the PDC API
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		log.Printf("request failed: %s", err)

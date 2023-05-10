@@ -164,21 +164,21 @@ func (km KeyManager) generateKeyPair() error {
 
 	// Generate a new private/public keypair for OpenSSH
 	pubKey, privKey, _ := ed25519.GenerateKey(rand.Reader)
-	publicKey, _ := ssh.NewPublicKey(pubKey)
+	sshPubKey, _ := ssh.NewPublicKey(pubKey)
 
 	pemKey := &pem.Block{
 		Type:  "OPENSSH PRIVATE KEY",
 		Bytes: edkey.MarshalED25519PrivateKey(privKey),
 	}
-	privateKey := pem.EncodeToMemory(pemKey)
+	pemPrivKey := pem.EncodeToMemory(pemKey)
 
-	err := km.writeKeyFile(privateKey)
+	err := km.writeKeyFile(pemPrivKey)
 	if err != nil {
 		return err
 	}
 
-	// public key should not be in PEM format
-	return km.writePubKeyFile(ssh.MarshalAuthorizedKey(publicKey))
+	// public key should be in authorized_keys file format
+	return km.writePubKeyFile(ssh.MarshalAuthorizedKey(sshPubKey))
 }
 
 func (km KeyManager) generateCert() error {
