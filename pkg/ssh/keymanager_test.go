@@ -109,9 +109,6 @@ func TestKeyManager_StartingAndStopping(t *testing.T) {
 }
 
 func TestKeyManager_EnsureKeysExist(t *testing.T) {
-	// remaining test cases:
-	// - cannot parse known_hosts
-
 	testcases := []struct {
 		name               string
 		setupFn            func(*testing.T, ssh.FileReadWriter, *ssh.Config)
@@ -135,48 +132,64 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			assertFn:           assertExpectedFiles,
 			wantSigningRequest: true,
 		},
-		// TODO update so all other files are present
 		{
-			name: "both key files exist but private key is an invalid format: expect new keys and request for cert",
+			name: "all key files exist but private key is an invalid format: expect new keys and request for cert",
 			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
 				t.Helper()
-				_, _, pubKey, _, _ := generateKeys("", "")
-				_ = frw.WriteFile(cfg.KeyFile+".pub", []byte(`not a private key`), 0644)
-				_ = frw.WriteFile(cfg.KeyFile, pubKey, 0600)
+				_, _, pubKey, cert, kh := generateKeys("", "")
+				_ = frw.WriteFile(cfg.KeyFile, []byte("invalid private key"), 0600)
+				_ = frw.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
+				_ = frw.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
+				_ = frw.WriteFile(path.Join(cfg.KeyFileDir(), "known_hosts"), kh, 06444)
 
 			},
 			assertFn:           assertExpectedFiles,
 			wantSigningRequest: true,
 		},
-		// TODO update so all other expected files are present
 		{
-			name: "both key files exist but public key is an invalid format: expect new keys and request for cert",
+			name: "all key files exist but public key is an invalid format: expect new keys and request for cert",
 			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
 				t.Helper()
-				_, privKey, _, _, _ := generateKeys("", "")
+				_, privKey, _, cert, kh := generateKeys("", "")
 				_ = frw.WriteFile(cfg.KeyFile, privKey, 0600)
-				_ = frw.WriteFile(cfg.KeyFile+".pub", []byte(`not a public key`), 0644)
+				_ = frw.WriteFile(cfg.KeyFile+".pub", []byte("not a public key"), 0644)
+				_ = frw.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
+				_ = frw.WriteFile(path.Join(cfg.KeyFileDir(), "known_hosts"), kh, 06444)
 			},
 			assertFn:           assertExpectedFiles,
 			wantSigningRequest: true,
 		},
 		{
-			name:            "Signing request fails, expect error",
-			apiResponseCode: 400,
-			wantErr:         true,
+			name: "all key files exist but cert is invalid: expect new keys and request for cert",
+			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
+				t.Helper()
+				_, privKey, pubKey, _, kh := generateKeys("", "")
+				_ = frw.WriteFile(cfg.KeyFile, privKey, 0600)
+				_ = frw.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
+				_ = frw.WriteFile(cfg.KeyFile+"-cert.pub", []byte("invalid cert"), 0644)
+				_ = frw.WriteFile(path.Join(cfg.KeyFileDir(), "known_hosts"), kh, 06444)
+			},
+			assertFn:           assertExpectedFiles,
+			wantSigningRequest: true,
 		},
-		// TODO update so all other expected files are present
 		{
-			name: "valid keys and cert, no known_hosts: call signing request",
+			name: "valid keys and cert, but invalid known_hosts: call signing request",
 			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
 				t.Helper()
 				_, privKey, pubKey, cert, _ := generateKeys("", "")
 				_ = frw.WriteFile(cfg.KeyFile, privKey, 0600)
 				_ = frw.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
 				_ = frw.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
+				_ = frw.WriteFile(path.Join(cfg.KeyFileDir(), "known_hosts"), []byte("invalid known_hosts"), 06444)
+
 			},
 			wantSigningRequest: true,
 			assertFn:           assertExpectedFiles,
+		},
+		{
+			name:            "Signing request fails, expect error",
+			apiResponseCode: 400,
+			wantErr:         true,
 		},
 		{
 			name: "valid keys, cert and known_hosts: no signing request",
