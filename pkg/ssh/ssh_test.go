@@ -98,4 +98,26 @@ func TestClient_SSHArgs(t *testing.T) {
 		assert.Nil(t, err)
 		assert.Equal(t, expectedArgs, result)
 	})
+
+	t.Run("ssh-flags get appended to command", func(t *testing.T) {
+		cfg := ssh.DefaultConfig()
+
+		cfg.URL = mustParseURL("host.grafana.net")
+
+		cfg.PDC = pdc.Config{
+			HostedGrafanaId: "123",
+		}
+
+		cfg.SSHFlags = []string{
+			"-vvv",
+			"-o testoption=2",
+		}
+
+		sshClient := ssh.NewClient(cfg, logger)
+		result, err := sshClient.SSHFlagsFromConfig()
+
+		assert.Nil(t, err)
+		assert.Equal(t, strings.Split("-i ~/.ssh/gcloud_pdc 123@host.grafana.net -p 22 -R 0 -vv -o UserKnownHostsFile=~/.ssh/known_hosts -o CertificateFile=~/.ssh/gcloud_pdc-cert.pub -vvv -o testoption=2", " "), result)
+
+	})
 }

@@ -51,10 +51,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	def := DefaultConfig()
 
 	cfg.SSHFlags = []string{}
-	f.Func("ssh-flag", "Additional flags to be passed to ssh. Can be set more than once.", cfg.addSSHFlag)
 	f.StringVar(&cfg.KeyFile, "ssh-key-file", def.KeyFile, "The path to the SSH key file.")
 	f.BoolVar(&cfg.ForceKeyFileOverwrite, "force-key-file-overwrite", false, forceKeyFileOverwriteUsage)
 	f.Func("ssh-url", "url of the PDC SSH gateway", cfg.parseGatewayURL)
+	f.Func("ssh-flag", "Additional flags to be passed to ssh. Can be set more than once.", cfg.addSSHFlag)
 
 }
 
@@ -73,7 +73,8 @@ func (cfg Config) KeyFileDir() string {
 	return dir
 }
 
-func (cfg *Config) addSSHFlag(flag string) error {
+func (cfg *Config) addSSHFlag(s string) error {
+	cfg.SSHFlags = append(cfg.SSHFlags, s)
 	return nil
 }
 
@@ -155,6 +156,10 @@ func (s *SSHClient) SSHFlagsFromConfig() ([]string, error) {
 		"-vv",
 		"-o", fmt.Sprintf("UserKnownHostsFile=%s/known_hosts", keyFileDir),
 		"-o", fmt.Sprintf("CertificateFile=%s-cert.pub", s.cfg.KeyFile),
+	}
+
+	for _, f := range s.cfg.SSHFlags {
+		result = append(result, strings.Split(f, " ")...)
 	}
 
 	return result, nil
