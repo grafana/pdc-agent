@@ -43,7 +43,7 @@ func TestStartingAndStopping(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Then is should eventually move to the terminated state
-	client.AwaitTerminated(ctx)
+	_ = client.AwaitTerminated(ctx)
 	assert.Equal(t, "Terminated", client.State().String())
 
 }

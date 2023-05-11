@@ -29,7 +29,6 @@ import (
 )
 
 var (
-	authToken    = "valid"
 	knownHosts   = `known hosts`
 	expectedCert = `
 -----BEGIN CERTIFICATE-----
@@ -103,7 +102,8 @@ func TestKeyManager_StartingAndStopping(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Then is should eventually move to the terminated state
-	km.AwaitTerminated(ctx)
+	err = km.AwaitTerminated(ctx)
+	assert.NoError(t, err)
 	assert.Equal(t, "Terminated", km.State().String())
 }
 
@@ -263,7 +263,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 
 			tc.assertFn(t, frw, cfg)
 
-			services.StopAndAwaitTerminated(ctx, svc)
+			_ = services.StopAndAwaitTerminated(ctx, svc)
 		})
 	}
 }

@@ -152,9 +152,9 @@ func (c *pdcClient) call(ctx context.Context, method, rpath string, params map[s
 	b := []byte{}
 	buf := bytes.NewBuffer(b)
 	encoder := base64.NewEncoder(base64.StdEncoding, buf)
-	encoder.Write([]byte(c.cfg.HostedGrafanaId + ":" + c.cfg.Token))
+	_, werr := encoder.Write([]byte(c.cfg.HostedGrafanaId + ":" + c.cfg.Token))
 	err = encoder.Close()
-	if err != nil {
+	if werr != nil || err != nil {
 		log.Printf("Failed to encode values for Authorization header: %s\n", err)
 		return nil, err
 	}

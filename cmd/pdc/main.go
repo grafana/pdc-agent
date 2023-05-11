@@ -69,11 +69,14 @@ func main() {
 		log.Fatalf("cannot declare ssh client: %s", err.Error())
 	}
 	// Start the ssh client
-	services.StartAndAwaitRunning(ctx, sshClient)
+	err = services.StartAndAwaitRunning(ctx, sshClient)
+	if err != nil {
+		log.Fatalf("cannot start ssh client: %s", err.Error())
+	}
 
 	// Wait for the ssh client to exit
-	sshClient.AwaitTerminated(context.Background())
-	km.AwaitTerminated(context.Background())
+	_ = sshClient.AwaitTerminated(context.Background())
+	_ = km.AwaitTerminated(context.Background())
 
 }
 
@@ -121,8 +124,10 @@ func runLegacyMode(ctx context.Context, sshConfig *ssh.Config) {
 		log.Fatalf("cannot declare ssh client: %s", err.Error())
 	}
 	// Start the ssh client
-	services.StartAndAwaitRunning(ctx, sshClient)
-
+	err = services.StartAndAwaitRunning(ctx, sshClient)
+	if err != nil {
+		log.Fatalf("cannot start ssh client: %s", err.Error())
+	}
 	// Wait for the ssh client to exit
-	sshClient.AwaitTerminated(context.Background())
+	_ = sshClient.AwaitTerminated(context.Background())
 }

@@ -112,7 +112,7 @@ func (s *SSHClient) starting(ctx context.Context) error {
 			cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
-			cmd.Run()
+			_ = cmd.Run()
 			if ctx.Err() != nil {
 				break // context was canceled
 			}
