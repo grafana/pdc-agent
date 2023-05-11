@@ -27,13 +27,9 @@ func (mf *mainFlags) RegisterFlags(fs *flag.FlagSet) {
 }
 
 func main() {
-
 	sshConfig := ssh.DefaultConfig()
 	mf := &mainFlags{}
 	pdcClientCfg := &pdc.Config{}
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	sshConfig.Args = os.Args[1:]
 
@@ -41,7 +37,11 @@ func main() {
 
 	if legacyMode {
 		sshConfig.LegacyMode = true
-		runLegacyMode(ctx, sshConfig)
+		err := runLegacyMode(sshConfig)
+		if err != nil {
+			fmt.Printf("error: %s", err)
+			os.Exit(1)
+		}
 		return
 	}
 
@@ -58,20 +58,32 @@ func main() {
 		return
 	}
 
-	sshConfig.PDC = *pdcClientCfg
-
-	pdcClient, err := pdc.NewClient(pdcClientCfg, logger)
+	err = run(logger, sshConfig, pdcClientCfg)
 	if err != nil {
-		level.Error(logger).Log("msg", fmt.Sprintf("cannot initialise PDC client: %s", err))
+		level.Error(logger).Log("err", err)
 		os.Exit(1)
 	}
 
-	// Whilst KeyManager is not passed to SSHClient, we need KM to have run before SSHClient is running.
+	sshConfig.PDC = *pdcClientCfg
+
+}
+
+func run(logger log.Logger, sshConfig *ssh.Config, pdcConfig *pdc.Config) error {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	pdcClient, err := pdc.NewClient(pdcConfig, logger)
+	if err != nil {
+		level.Error(logger).Log("msg", fmt.Sprintf("cannot initialise PDC client: %s", err))
+		return err
+	}
+
+	// Whilst KeyManager is not passed to ssh.Client, we need KM to have run before ssh.Client is running.
 	km := ssh.NewKeyManager(sshConfig, logger, pdcClient, &ssh.OSFileReadWriter{})
 	err = services.StartAndAwaitRunning(ctx, km)
 	if err != nil {
 		level.Error(logger).Log("msg", fmt.Sprintf("cannot start key manager: %s", err))
-		os.Exit(1)
+		return err
 	}
 
 	// Create the SSH Service
@@ -80,13 +92,14 @@ func main() {
 	err = services.StartAndAwaitRunning(ctx, sshClient)
 	if err != nil {
 		level.Error(logger).Log("msg", fmt.Sprintf("cannot start ssh client: %s", err))
-		os.Exit(1)
+		return err
 	}
 
 	// Wait for the ssh client to exit
 	_ = sshClient.AwaitTerminated(context.Background())
 	_ = km.AwaitTerminated(context.Background())
 
+	return nil
 }
 
 // parseFlags creates a flagset, registers all given flags, and parses. It
@@ -126,17 +139,21 @@ func inLegacyMode() bool {
 	return false
 }
 
-func runLegacyMode(ctx context.Context, sshConfig *ssh.Config) {
+func runLegacyMode(sshConfig *ssh.Config) error {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	logger := log.NewLogfmtLogger(os.Stdout)
 	sshClient := ssh.NewClient(sshConfig, logger)
 	// Start the ssh client
 	err := services.StartAndAwaitRunning(ctx, sshClient)
 	if err != nil {
 		level.Error(logger).Log("msg", fmt.Sprintf("cannot start ssh client: %s", err))
-		os.Exit(1)
+		return err
 	}
 	// Wait for the ssh client to exit
 	_ = sshClient.AwaitTerminated(context.Background())
+	return nil
 }
 
 // setupLogger with level filter.

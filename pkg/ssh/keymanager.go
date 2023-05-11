@@ -51,7 +51,7 @@ func NewKeyManager(cfg *Config, logger log.Logger, client pdc.Client, frw FileRe
 	return &km
 }
 
-func (km *KeyManager) starting(ctx context.Context) error {
+func (km *KeyManager) starting(_ context.Context) error {
 	level.Info(km.logger).Log("msg", "starting key manager")
 
 	newCertRequired := km.cfg.ForceKeyFileOverwrite

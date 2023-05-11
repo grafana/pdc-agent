@@ -79,8 +79,8 @@ func (cfg *Config) addSSHFlag(s string) error {
 	return nil
 }
 
-// SSHClient is a client for ssh. It configures and runs ssh commands
-type SSHClient struct {
+// Client is a client for ssh. It configures and runs ssh commands
+type Client struct {
 	*services.BasicService
 	cfg    *Config
 	SSHCmd string // SSH command to run, defaults to "ssh". Require for testing.
@@ -88,8 +88,8 @@ type SSHClient struct {
 }
 
 // NewClient returns a new SSH client in an idle state
-func NewClient(cfg *Config, logger log.Logger) *SSHClient {
-	client := &SSHClient{
+func NewClient(cfg *Config, logger log.Logger) *Client {
+	client := &Client{
 		cfg:    cfg,
 		SSHCmd: "ssh",
 		logger: logger,
@@ -99,7 +99,7 @@ func NewClient(cfg *Config, logger log.Logger) *SSHClient {
 	return client
 }
 
-func (s *SSHClient) starting(ctx context.Context) error {
+func (s *Client) starting(ctx context.Context) error {
 	level.Info(s.logger).Log("msg", "starting ssh client")
 	go func() {
 		for {
@@ -128,7 +128,7 @@ func (s *SSHClient) starting(ctx context.Context) error {
 	return nil
 }
 
-func (s *SSHClient) stopping(err error) error {
+func (s *Client) stopping(err error) error {
 	level.Info(s.logger).Log("msg", "stopping ssh client")
 	return err
 }
@@ -136,7 +136,7 @@ func (s *SSHClient) stopping(err error) error {
 // SSHFlagsFromConfig generates the array of flags to pass to the ssh command.
 // It does not stop default flags from being overidden, but only the first instance
 // of `-o` flags are used.
-func (s *SSHClient) SSHFlagsFromConfig() ([]string, error) {
+func (s *Client) SSHFlagsFromConfig() ([]string, error) {
 
 	if s.cfg.LegacyMode {
 		level.Warn(s.logger).Log("msg", "running in legacy mode")
@@ -150,7 +150,7 @@ func (s *SSHClient) SSHFlagsFromConfig() ([]string, error) {
 	result := []string{
 		"-i",
 		s.cfg.KeyFile,
-		fmt.Sprintf("%s@%s", s.cfg.PDC.HostedGrafanaId, gwURL.String()),
+		fmt.Sprintf("%s@%s", s.cfg.PDC.HostedGrafanaID, gwURL.String()),
 		"-p",
 		fmt.Sprintf("%d", s.cfg.Port),
 		"-R", "0",

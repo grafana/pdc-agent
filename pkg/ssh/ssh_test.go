@@ -50,7 +50,7 @@ func TestStartingAndStopping(t *testing.T) {
 
 // testClient returns a new SSH client with a mocked command
 // see https://npf.io/2015/06/testing-exec-command/
-func newTestClient(cfg *ssh.Config) *ssh.SSHClient {
+func newTestClient(cfg *ssh.Config) *ssh.Client {
 	logger := log.NewNopLogger()
 	cfg.Args = append([]string{"-test.run=TestFakeSSHCmd", "--"}, cfg.Args...)
 	cfg.URL = mustParseURL("localhost")
@@ -75,7 +75,7 @@ func TestClient_SSHArgs(t *testing.T) {
 		cfg.URL = mustParseURL("host.grafana.net")
 
 		cfg.PDC = pdc.Config{
-			HostedGrafanaId: "123",
+			HostedGrafanaID: "123",
 		}
 
 		sshClient := ssh.NewClient(cfg, logger)
@@ -105,7 +105,7 @@ func TestClient_SSHArgs(t *testing.T) {
 		cfg.URL = mustParseURL("host.grafana.net")
 
 		cfg.PDC = pdc.Config{
-			HostedGrafanaId: "123",
+			HostedGrafanaID: "123",
 		}
 
 		cfg.SSHFlags = []string{

@@ -31,17 +31,17 @@ var (
 // Config describes all properties that can be configured for the PDC package
 type Config struct {
 	Token           string
-	HostedGrafanaId string
+	HostedGrafanaID string
 	URL             *url.URL
 }
 
 func (cfg *Config) RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&cfg.Token, "token", "", "The token to use to authenticate with Grafana Cloud. It must have the pdc-signing:write scope")
-	fs.StringVar(&cfg.HostedGrafanaId, "gcloud-hosted-grafana-id", "", "The ID of the Hosted Grafana instance to connect to")
-	fs.Func("api-url", "The URL to the PDC API", cfg.parseApiURL)
+	fs.StringVar(&cfg.HostedGrafanaID, "gcloud-hosted-grafana-id", "", "The ID of the Hosted Grafana instance to connect to")
+	fs.Func("api-url", "The URL to the PDC API", cfg.parseAPIURL)
 }
 
-func (cfg *Config) parseApiURL(s string) error {
+func (cfg *Config) parseAPIURL(s string) error {
 	url, err := url.Parse(s)
 	if err != nil {
 		return err
@@ -159,7 +159,7 @@ func (c *pdcClient) call(ctx context.Context, method, rpath string, params map[s
 	b := []byte{}
 	buf := bytes.NewBuffer(b)
 	encoder := base64.NewEncoder(base64.StdEncoding, buf)
-	_, werr := encoder.Write([]byte(c.cfg.HostedGrafanaId + ":" + c.cfg.Token))
+	_, werr := encoder.Write([]byte(c.cfg.HostedGrafanaID + ":" + c.cfg.Token))
 	err = encoder.Close()
 	if werr != nil || err != nil {
 		level.Error(c.logger).Log("msg", "error encoding Authorization header", "err", err)
