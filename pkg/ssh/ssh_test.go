@@ -71,7 +71,7 @@ func TestClient_SSHArgs(t *testing.T) {
 
 		cfg.URL = mustParseURL("host.grafana.net")
 
-		cfg.PDC = &pdc.Config{
+		cfg.PDC = pdc.Config{
 			HostedGrafanaId: "123",
 		}
 

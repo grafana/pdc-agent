@@ -78,11 +78,11 @@ azl0ZGNvOFFqN0pIcFR0WnFBRm12c1E9PQo=
 
 func TestKeyManager_StartingAndStopping(t *testing.T) {
 	//
-	cfg := &ssh.Config{}
-	client, _ := pdc.NewClient(&pdc.Config{})
+	cfg := ssh.DefaultConfig()
+	cfg.URL = mustParseURL("ssh.local")
 
 	// given a Key manager
-	km := ssh.NewKeyManager(cfg, client, &ssh.OSFileReadWriter{})
+	km := ssh.NewKeyManager(cfg, mockClient{}, &mockFileReadWriter{data: map[string][]byte{}})
 	require.NotNil(t, km)
 
 	ctx := context.Background()
@@ -128,7 +128,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			name: "only private key file exists: expect new keys and request for cert",
 			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
 				t.Helper()
-				_, privKey, _, _, _ := generateKeyPair("", "")
+				_, privKey, _, _, _ := generateKeys("", "")
 				_ = frw.WriteFile(cfg.KeyFile, privKey, 0600)
 			},
 			assertFn:           assertExpectedFiles,
@@ -139,7 +139,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			name: "both key files exist but private key is an invalid format: expect new keys and request for cert",
 			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
 				t.Helper()
-				_, _, pubKey, _, _ := generateKeyPair("", "")
+				_, _, pubKey, _, _ := generateKeys("", "")
 				_ = frw.WriteFile(cfg.KeyFile+".pub", []byte(`not a private key`), 0644)
 				_ = frw.WriteFile(cfg.KeyFile, pubKey, 0600)
 
@@ -152,7 +152,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			name: "both key files exist but public key is an invalid format: expect new keys and request for cert",
 			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
 				t.Helper()
-				_, privKey, _, _, _ := generateKeyPair("", "")
+				_, privKey, _, _, _ := generateKeys("", "")
 				_ = frw.WriteFile(cfg.KeyFile, privKey, 0600)
 				_ = frw.WriteFile(cfg.KeyFile+".pub", []byte(`not a public key`), 0644)
 			},
@@ -169,7 +169,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			name: "valid keys and cert, no known_hosts: call signing request",
 			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
 				t.Helper()
-				_, privKey, pubKey, cert, _ := generateKeyPair("", "")
+				_, privKey, pubKey, cert, _ := generateKeys("", "")
 				_ = frw.WriteFile(cfg.KeyFile, privKey, 0600)
 				_ = frw.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
 				_ = frw.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
@@ -181,7 +181,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			name: "valid keys, cert and known_hosts: no signing request",
 			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
 				t.Helper()
-				_, privKey, pubKey, cert, kh := generateKeyPair("", "")
+				_, privKey, pubKey, cert, kh := generateKeys("", "")
 				_ = frw.WriteFile(cfg.KeyFile, privKey, 0600)
 				_ = frw.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
 				_ = frw.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
@@ -212,7 +212,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
 				t.Helper()
 				// gen cert with validity period in the past
-				_, privKey, pubKey, cert, kh := generateKeyPair("-10m", "-1h")
+				_, privKey, pubKey, cert, kh := generateKeys("-10m", "-1h")
 				_ = frw.WriteFile(cfg.KeyFile, privKey, 0600)
 				_ = frw.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
 				_ = frw.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
@@ -229,7 +229,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 
 			// create default configs
 			frw := newEmptyFileReadWriter()
-			pdcCfg := &pdc.Config{}
+			pdcCfg := pdc.Config{}
 			cfg := ssh.DefaultConfig()
 			cfg.PDC = pdcCfg
 
@@ -245,7 +245,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				tc.setupFn(t, frw, cfg)
 			}
 
-			client, err := pdc.NewClient(pdcCfg)
+			client, err := pdc.NewClient(&pdcCfg)
 			require.Nil(t, err)
 
 			// create svc under test
@@ -266,6 +266,21 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			services.StopAndAwaitTerminated(ctx, svc)
 		})
 	}
+}
+
+type mockClient struct {
+}
+
+func (mc mockClient) SignSSHKey(ctx context.Context, key []byte) (*pdc.SigningResponse, error) {
+
+	_, _, _, cert, knownhosts := generateKeys("", "")
+
+	pbk, _, _, _, _ := gossh.ParseAuthorizedKey(cert)
+	c, _ := pbk.(*gossh.Certificate)
+	return &pdc.SigningResponse{
+		Certificate: *c,
+		KnownHosts:  knownhosts,
+	}, nil
 }
 
 // mockFileReadWriter implements ssh.FileReadWriter
@@ -327,7 +342,7 @@ func mustParseCert(t *testing.T) []byte {
 
 }
 
-func generateKeyPair(validBeforeDur string, validAfterDur string) ([]byte, []byte, []byte, []byte, []byte) {
+func generateKeys(validBeforeDur string, validAfterDur string) ([]byte, []byte, []byte, []byte, []byte) {
 	caKey, _ := rsa.GenerateKey(rand.Reader, ssh.SSHKeySize)
 	caPem := &pem.Block{
 		Type:  "RSA PRIVATE KEY",

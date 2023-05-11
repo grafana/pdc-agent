@@ -49,7 +49,7 @@ func main() {
 		return
 	}
 
-	sshConfig.PDC = pdcClientCfg
+	sshConfig.PDC = *pdcClientCfg
 
 	pdcClient, err := pdc.NewClient(pdcClientCfg)
 	if err != nil {

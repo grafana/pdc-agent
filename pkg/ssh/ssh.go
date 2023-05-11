@@ -24,7 +24,7 @@ type Config struct {
 	SSHFlags              []string // Additional flags to be passed to ssh(1). e.g. --ssh-flag="-vvv" --ssh-flag="-L 80:localhost:80"
 	ForceKeyFileOverwrite bool
 	Port                  int
-	PDC                   *pdc.Config
+	PDC                   pdc.Config
 	LegacyMode            bool
 	URL                   *url.URL
 }
@@ -41,7 +41,7 @@ func DefaultConfig() *Config {
 
 	return &Config{
 		Port:    22,
-		PDC:     &pdc.Config{},
+		PDC:     pdc.Config{},
 		KeyFile: "~/.ssh/gcloud_pdc",
 	}
 }
@@ -138,7 +138,6 @@ func (s *SSHClient) SSHFlagsFromConfig() ([]string, error) {
 
 	if s.cfg.LegacyMode {
 		log.Println("running in legacy mode")
-		log.Printf("%+v \n %+v", s.cfg, *s.cfg.PDC)
 		return s.cfg.Args, nil
 	}
 
