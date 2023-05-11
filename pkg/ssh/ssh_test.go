@@ -52,6 +52,7 @@ func TestStartingAndStopping(t *testing.T) {
 // see https://npf.io/2015/06/testing-exec-command/
 func newTestClient(cfg *ssh.Config) *ssh.SSHClient {
 	cfg.Args = append([]string{"-test.run=TestFakeSSHCmd", "--"}, cfg.Args...)
+	cfg.URL = mustParseURL("localhost")
 	client, _ := ssh.NewClient(cfg)
 	client.SSHCmd = os.Args[0]
 	return client
