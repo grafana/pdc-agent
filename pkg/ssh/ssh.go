@@ -2,9 +2,11 @@ package ssh
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"os/exec"
 	"path"
@@ -24,6 +26,7 @@ type Config struct {
 	Port                  int
 	PDC                   *pdc.Config
 	LegacyMode            bool
+	URL                   *url.URL
 }
 
 const forceKeyFileOverwriteUsage = `If enabled, the pdc-agent will regenerate an SSH key pair and request a new
@@ -38,7 +41,7 @@ func DefaultConfig() *Config {
 
 	return &Config{
 		Port:    22,
-		PDC:     pdc.DefaultConfig(),
+		PDC:     &pdc.Config{},
 		KeyFile: "~/.ssh/gcloud_pdc",
 	}
 }
@@ -50,7 +53,18 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.Func("ssh-flag", "Additional flags to be passed to ssh. Can be set more than once.", cfg.addSSHFlag)
 	f.StringVar(&cfg.KeyFile, "ssh-key-file", def.KeyFile, "The path to the SSH key file.")
 	f.BoolVar(&cfg.ForceKeyFileOverwrite, "force-key-file-overwrite", false, forceKeyFileOverwriteUsage)
+	f.Func("ssh-url", "url of the PDC SSH gateway", cfg.parseGatewayURL)
 
+}
+
+func (cfg *Config) parseGatewayURL(s string) error {
+	url, err := url.Parse(s)
+	if err != nil {
+		return err
+	}
+
+	cfg.URL = url
+	return nil
 }
 
 func (cfg Config) KeyFileDir() string {
@@ -69,14 +83,17 @@ type SSHClient struct {
 }
 
 // NewClient returns a new SSH client
-func NewClient(cfg *Config) *SSHClient {
+func NewClient(cfg *Config) (*SSHClient, error) {
+	if cfg.URL == nil {
+		return nil, errors.New("ssh-url cannot be nil")
+	}
 	client := &SSHClient{
 		cfg:    cfg,
 		SSHCmd: "ssh",
 	}
 
 	client.BasicService = services.NewIdleService(client.starting, client.stopping)
-	return client
+	return client, nil
 }
 
 func (s *SSHClient) starting(ctx context.Context) error {
@@ -128,7 +145,7 @@ func (s *SSHClient) SSHFlagsFromConfig() ([]string, error) {
 	keyFileArr := strings.Split(s.cfg.KeyFile, "/")
 	keyFileDir := strings.Join(keyFileArr[:len(keyFileArr)-1], "/")
 
-	gwURL, _ := s.cfg.PDC.GatewayURL()
+	gwURL := s.cfg.URL
 	result := []string{
 		"-i",
 		s.cfg.KeyFile,

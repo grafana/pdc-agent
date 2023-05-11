@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"strings"
 
 	"github.com/grafana/pdc-agent/pkg/httpclient"
 	"golang.org/x/crypto/ssh"
@@ -28,55 +27,25 @@ var (
 )
 
 type Config struct {
-	Host            string
-	Domain          string
 	Token           string
 	HostedGrafanaId string
-	API             *url.URL
-	Gateway         *url.URL
-}
-
-func DefaultConfig() *Config {
-	return &Config{
-		Domain: "grafana.net",
-	}
+	URL             *url.URL
 }
 
 func (cfg *Config) RegisterFlags(fs *flag.FlagSet) {
-	def := DefaultConfig()
 	fs.StringVar(&cfg.Token, "token", "", "The token to use to authenticate with Grafana Cloud. It must have the pdc-signing:write scope")
-	fs.StringVar(&cfg.Host, "host", "", "The host for PDC endpoints")
-	fs.StringVar(&cfg.Domain, "domain", def.Domain, "The domain for PDC endpoints")
 	fs.StringVar(&cfg.HostedGrafanaId, "gcloud-hosted-grafana-id", "", "The ID of the Hosted Grafana instance to connect to")
+	fs.Func("api-url", "The URL to the PDC API", cfg.parseApiURL)
 }
 
-func (cfg *Config) APIURL() (*url.URL, error) {
-	if cfg.API != nil {
-		return cfg.API, nil
+func (cfg *Config) parseApiURL(s string) error {
+	url, err := url.Parse(s)
+	if err != nil {
+		return err
 	}
 
-	prefix := "private-datasource-connect"
-	cluster, found := strings.CutPrefix(cfg.Host, prefix)
-	if !found {
-		// some custom host. Try to parse it and assume we dont need to edit it
-		return url.Parse(cfg.Host + "." + cfg.Domain)
-	}
-	// add "-api" into hostname between private-datasource-connect and cluster
-	url, err := url.Parse("https://" + prefix + "-api" + cluster + "." + cfg.Domain)
-	if err != nil {
-		return nil, err
-	}
-	cfg.API = url
-	return cfg.API, nil
-}
-
-func (cfg *Config) GatewayURL() (*url.URL, error) {
-	url, err := url.Parse(cfg.Host + "." + cfg.Domain)
-	if err != nil {
-		return nil, err
-	}
-	cfg.Gateway = url
-	return cfg.Gateway, nil
+	cfg.URL = url
+	return nil
 }
 
 type Client interface {
@@ -124,24 +93,19 @@ func (sr *SigningResponse) UnmarshalJSON(data []byte) error {
 }
 
 func NewClient(cfg *Config) (Client, error) {
-	url, err := cfg.APIURL()
-	if err != nil {
-		return nil, err
+	if cfg.URL == nil {
+		return nil, errors.New("api.url cannot be nil")
 	}
-
-	log.Printf("client URL is %s", url)
 
 	return &pdcClient{
 		cfg:        cfg,
 		httpClient: &http.Client{Transport: httpclient.UserAgentTransport(nil)},
-		url:        url,
 	}, nil
 }
 
 type pdcClient struct {
 	cfg        *Config
 	httpClient *http.Client
-	url        *url.URL
 }
 
 func (c *pdcClient) SignSSHKey(ctx context.Context, key []byte) (*SigningResponse, error) {
@@ -163,7 +127,7 @@ func (c *pdcClient) SignSSHKey(ctx context.Context, key []byte) (*SigningRespons
 
 func (c *pdcClient) call(ctx context.Context, method, rpath string, params map[string]string, body map[string]string) ([]byte, error) {
 
-	url := *c.url
+	url := *c.cfg.URL
 	url.Path = path.Join(url.Path, rpath)
 
 	q := url.Query()

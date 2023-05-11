@@ -229,7 +229,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 
 			// create default configs
 			frw := newEmptyFileReadWriter()
-			pdcCfg := pdc.DefaultConfig()
+			pdcCfg := &pdc.Config{}
 			cfg := ssh.DefaultConfig()
 			cfg.PDC = pdcCfg
 
@@ -238,7 +238,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				tc.apiResponseCode = 200
 			}
 			url, called := mockPDC(t, http.MethodPost, "/pdc/api/v1/sign-public-key", tc.apiResponseCode)
-			pdcCfg.API = url
+			pdcCfg.URL = url
 
 			// allow test case to modify cfg and add files to frw
 			if tc.setupFn != nil {

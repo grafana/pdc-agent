@@ -2,13 +2,24 @@ package ssh_test
 
 import (
 	"context"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/grafana/pdc-agent/pkg/pdc"
 	"github.com/grafana/pdc-agent/pkg/ssh"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func mustParseURL(s string) *url.URL {
+	url, err := url.Parse(s)
+	if err != nil {
+		panic(err)
+	}
+	return url
+}
 
 func TestStartingAndStopping(t *testing.T) {
 	// Given an SSH client
@@ -41,7 +52,7 @@ func TestStartingAndStopping(t *testing.T) {
 // see https://npf.io/2015/06/testing-exec-command/
 func newTestClient(cfg *ssh.Config) *ssh.SSHClient {
 	cfg.Args = append([]string{"-test.run=TestFakeSSHCmd", "--"}, cfg.Args...)
-	client := ssh.NewClient(cfg)
+	client, _ := ssh.NewClient(cfg)
 	client.SSHCmd = os.Args[0]
 	return client
 }
@@ -55,13 +66,17 @@ func TestFakeSSHCmd(t *testing.T) {
 // hanging off the right struct or organised appropriately.
 func TestClient_SSHArgs(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
-		defaultCfg := ssh.DefaultConfig()
+		cfg := ssh.DefaultConfig()
 
-		// populate required config items with no defaults
-		defaultCfg.PDC.Host = "host"
-		defaultCfg.PDC.HostedGrafanaId = "123"
+		cfg.URL = mustParseURL("host.grafana.net")
 
-		result, err := ssh.NewClient(defaultCfg).SSHFlagsFromConfig()
+		cfg.PDC = &pdc.Config{
+			HostedGrafanaId: "123",
+		}
+
+		sshClient, err := ssh.NewClient(cfg)
+		require.NoError(t, err)
+		result, err := sshClient.SSHFlagsFromConfig()
 
 		assert.Nil(t, err)
 		assert.Equal(t, strings.Split("-i ~/.ssh/gcloud_pdc 123@host.grafana.net -p 22 -R 0 -vv -o UserKnownHostsFile=~/.ssh/known_hosts -o CertificateFile=~/.ssh/gcloud_pdc-cert.pub", " "), result)
@@ -70,8 +85,13 @@ func TestClient_SSHArgs(t *testing.T) {
 	t.Run("legacy args (deprecated)", func(t *testing.T) {
 		expectedArgs := []string{"test", "ok"}
 		cfg := ssh.DefaultConfig()
+		cfg.LegacyMode = true
+		cfg.URL = mustParseURL("localhost")
 		cfg.Args = expectedArgs
-		result, err := ssh.NewClient(cfg).SSHFlagsFromConfig()
+
+		sshClient, err := ssh.NewClient(cfg)
+		require.NoError(t, err)
+		result, err := sshClient.SSHFlagsFromConfig()
 
 		assert.Nil(t, err)
 		assert.Equal(t, expectedArgs, result)

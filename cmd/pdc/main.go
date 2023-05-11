@@ -56,17 +56,18 @@ func main() {
 		log.Fatalf("cannot initialise PDC client: %s", err)
 	}
 
+	// Whilst KeyManager is not passed to SSHClient, we need KM to have run before SSHClient is running.
 	km := ssh.NewKeyManager(sshConfig, pdcClient, &ssh.OSFileReadWriter{})
 	err = services.StartAndAwaitRunning(ctx, km)
 	if err != nil {
 		log.Fatalf("cannot start key manager: %s", err.Error())
 	}
 
-	// Whilst KeyManager is not passed to SSHClient, we need KM to have run before SSHClient is running.
-	// TODO add dskit module manager to we can have a more formal dependency map
-
 	// Create the SSH Service
-	sshClient := ssh.NewClient(sshConfig)
+	sshClient, err := ssh.NewClient(sshConfig)
+	if err != nil {
+		log.Fatalf("cannot declare ssh client: %s", err.Error())
+	}
 	// Start the ssh client
 	services.StartAndAwaitRunning(ctx, sshClient)
 
@@ -115,7 +116,10 @@ func inLegacyMode() bool {
 }
 
 func runLegacyMode(ctx context.Context, sshConfig *ssh.Config) {
-	sshClient := ssh.NewClient(sshConfig)
+	sshClient, err := ssh.NewClient(sshConfig)
+	if err != nil {
+		log.Fatalf("cannot declare ssh client: %s", err.Error())
+	}
 	// Start the ssh client
 	services.StartAndAwaitRunning(ctx, sshClient)
 
