@@ -28,6 +28,8 @@ const (
 
 // KeyManager manages SSH keys and certificates. It ensures that the SSH keys,
 // certificates and known_hosts files exist in their configured locations.
+// If the service starts successfully, then the key and cert files will exist.
+// It will attempt to reuse existing keys and certs if they exist.
 type KeyManager struct {
 	*services.BasicService
 	cfg    *Config
@@ -36,6 +38,7 @@ type KeyManager struct {
 	logger log.Logger
 }
 
+// NewKeyManager returns a new KeyManager in an idle state
 func NewKeyManager(cfg *Config, logger log.Logger, client pdc.Client, frw FileReadWriter) *KeyManager {
 	km := KeyManager{
 		cfg:    cfg,

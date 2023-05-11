@@ -18,10 +18,11 @@ import (
 	"github.com/grafana/pdc-agent/pkg/pdc"
 )
 
+// Config represents all configurable properties of the ssh package.
 type Config struct {
 	Args []string // deprecated
 
-	KeyFile               string   // path to private key file
+	KeyFile               string
 	SSHFlags              []string // Additional flags to be passed to ssh(1). e.g. --ssh-flag="-vvv" --ssh-flag="-L 80:localhost:80"
 	ForceKeyFileOverwrite bool
 	Port                  int
@@ -78,6 +79,7 @@ func (cfg *Config) addSSHFlag(s string) error {
 	return nil
 }
 
+// SSHClient is a client for ssh. It configures and runs ssh commands
 type SSHClient struct {
 	*services.BasicService
 	cfg    *Config
@@ -85,7 +87,7 @@ type SSHClient struct {
 	logger log.Logger
 }
 
-// NewClient returns a new SSH client
+// NewClient returns a new SSH client in an idle state
 func NewClient(cfg *Config, logger log.Logger) *SSHClient {
 	client := &SSHClient{
 		cfg:    cfg,
@@ -131,10 +133,9 @@ func (s *SSHClient) stopping(err error) error {
 	return err
 }
 
-// SSHFlagsFromConfig generates the flags we pass to ssh.
-// I don't think we need to enforce some flags from being overidden: The agent
-// is just a convenience, users could override anything using ssh if they wanted.
-// All of our control lives within the SSH certificate.
+// SSHFlagsFromConfig generates the array of flags to pass to the ssh command.
+// It does not stop default flags from being overidden, but only the first instance
+// of `-o` flags are used.
 func (s *SSHClient) SSHFlagsFromConfig() ([]string, error) {
 
 	if s.cfg.LegacyMode {
@@ -159,6 +160,8 @@ func (s *SSHClient) SSHFlagsFromConfig() ([]string, error) {
 	}
 
 	for _, f := range s.cfg.SSHFlags {
+		// flags are in the format '-vv' or '-o Option=Value'. Split to flatten strings
+		// in the second format
 		result = append(result, strings.Split(f, " ")...)
 	}
 

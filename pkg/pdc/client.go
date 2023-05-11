@@ -28,6 +28,7 @@ var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
 )
 
+// Config describes all properties that can be configured for the PDC package
 type Config struct {
 	Token           string
 	HostedGrafanaId string
@@ -50,12 +51,14 @@ func (cfg *Config) parseApiURL(s string) error {
 	return nil
 }
 
+// Client is a PDC API client
 type Client interface {
 	SignSSHKey(ctx context.Context, key []byte) (*SigningResponse, error)
 }
 
+// SigningResponse is the response received from a SSH key signing request
 type SigningResponse struct {
-	Certificate ssh.Certificate // use anon struct for unmarshalling, not this one.
+	Certificate ssh.Certificate
 	KnownHosts  []byte
 }
 
@@ -94,6 +97,7 @@ func (sr *SigningResponse) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// NewClient returns a new Client
 func NewClient(cfg *Config, logger log.Logger) (Client, error) {
 	if cfg.URL == nil {
 		return nil, errors.New("api.url cannot be nil")
@@ -145,7 +149,6 @@ func (c *pdcClient) call(ctx context.Context, method, rpath string, params map[s
 		return nil, err
 	}
 
-	// Prepare the request
 	req, err := http.NewRequestWithContext(ctx, method, url.String(), bytes.NewBuffer(jsonB))
 	if err != nil {
 		level.Error(c.logger).Log("msg", "error creating PDC API request", "err", err)
