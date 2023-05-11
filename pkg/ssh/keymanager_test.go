@@ -222,6 +222,19 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			wantSigningRequest: true,
 			assertFn:           assertExpectedFiles,
 		},
+		{
+			name: "forceKeyFileOverwrite is true: expect signing request",
+			setupFn: func(t *testing.T, frw ssh.FileReadWriter, cfg *ssh.Config) {
+				t.Helper()
+				_, privKey, pubKey, cert, kh := generateKeys("", "")
+				_ = frw.WriteFile(cfg.KeyFile, privKey, 0600)
+				_ = frw.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
+				_ = frw.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
+				_ = frw.WriteFile(path.Join(cfg.KeyFileDir(), "known_hosts"), kh, 06444)
+				cfg.ForceKeyFileOverwrite = true
+			},
+			wantSigningRequest: true,
+		},
 	}
 
 	for _, tc := range testcases {
@@ -264,7 +277,9 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 
 			assert.Equal(t, tc.wantSigningRequest, *called)
 
-			tc.assertFn(t, frw, cfg)
+			if tc.assertFn != nil {
+				tc.assertFn(t, frw, cfg)
+			}
 
 			_ = services.StopAndAwaitTerminated(ctx, svc)
 		})

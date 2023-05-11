@@ -51,9 +51,14 @@ func NewKeyManager(cfg *Config, logger log.Logger, client pdc.Client, frw FileRe
 func (km *KeyManager) starting(ctx context.Context) error {
 	level.Info(km.logger).Log("msg", "starting key manager")
 
-	newCertRequired, err := km.ensureKeysExist()
-	if err != nil {
-		return err
+	newCertRequired := km.cfg.ForceKeyFileOverwrite
+	var err error
+
+	if !newCertRequired {
+		newCertRequired, err = km.ensureKeysExist()
+		if err != nil {
+			return err
+		}
 	}
 
 	return km.ensureCertExists(newCertRequired)
@@ -89,6 +94,7 @@ func (km KeyManager) ensureCertExists(forceCreate bool) error {
 		if err != nil {
 			return fmt.Errorf("failed to generate new certificate: %w", err)
 		}
+		return nil
 	}
 
 	newCertRequired = km.newCertRequired()
