@@ -8,10 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
 	"os"
 	"path"
 	"time"
+
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/pdc-agent/pkg/pdc"
@@ -31,13 +33,15 @@ type KeyManager struct {
 	cfg    *Config
 	frw    FileReadWriter
 	client pdc.Client
+	logger log.Logger
 }
 
-func NewKeyManager(cfg *Config, client pdc.Client, frw FileReadWriter) *KeyManager {
+func NewKeyManager(cfg *Config, logger log.Logger, client pdc.Client, frw FileReadWriter) *KeyManager {
 	km := KeyManager{
 		cfg:    cfg,
 		frw:    frw,
 		client: client,
+		logger: logger,
 	}
 
 	km.BasicService = services.NewIdleService(km.starting, km.stopping)
@@ -45,7 +49,7 @@ func NewKeyManager(cfg *Config, client pdc.Client, frw FileReadWriter) *KeyManag
 }
 
 func (km *KeyManager) starting(ctx context.Context) error {
-	log.Println("starting key manager")
+	level.Info(km.logger).Log("msg", "starting key manager")
 
 	newCertRequired, err := km.ensureKeysExist()
 	if err != nil {
@@ -56,8 +60,7 @@ func (km *KeyManager) starting(ctx context.Context) error {
 }
 
 func (km *KeyManager) stopping(_ error) error {
-	log.Println("stopping key manager")
-
+	level.Info(km.logger).Log("msg", "stopping key manager")
 	return nil
 }
 
@@ -82,7 +85,10 @@ func (km KeyManager) ensureCertExists(forceCreate bool) error {
 	newCertRequired := forceCreate
 
 	if newCertRequired {
-		return km.generateCert()
+		err := km.generateCert()
+		if err != nil {
+			return fmt.Errorf("failed to generate new certificate: %w", err)
+		}
 	}
 
 	newCertRequired = km.newCertRequired()
@@ -91,31 +97,35 @@ func (km KeyManager) ensureCertExists(forceCreate bool) error {
 		return nil
 	}
 
-	return km.generateCert()
+	err := km.generateCert()
+	if err != nil {
+		return fmt.Errorf("failed to generate new certificate: %w", err)
+	}
+	return nil
 }
 
 func (km KeyManager) newKeysRequired() bool {
 	kb, err := km.readKeyFile()
 	if err != nil {
-		log.Println("could not read private key file")
+		level.Info(km.logger).Log("msg", "new keys required: could not read private key file")
 		return true
 	}
 
 	block, _ := pem.Decode(kb)
 	if block == nil {
-		log.Println("could not parse private key PEM file")
+		level.Info(km.logger).Log("msg", "new keys required: could not parse private key PEM file")
 		return true
 	}
 
 	pbk, err := km.readPubKeyFile()
 	if err != nil {
-		log.Println("could not read public key file")
+		level.Info(km.logger).Log("msg", "new keys required: could not read public key file")
 		return true
 	}
 
 	_, _, _, _, err = ssh.ParseAuthorizedKey(pbk)
 	if err != nil {
-		log.Println("could not parse public key")
+		level.Info(km.logger).Log("msg", "new keys required: could not parse public key")
 		return true
 	}
 
@@ -125,46 +135,45 @@ func (km KeyManager) newKeysRequired() bool {
 func (km KeyManager) newCertRequired() bool {
 	cb, err := km.readCertFile()
 	if err != nil {
-		log.Println("could not read certificate file")
+		level.Info(km.logger).Log("msg", "new certificate required: could not read certificate file")
 		return true
 	}
 	pk, _, _, _, err := ssh.ParseAuthorizedKey(cb)
 	if err != nil {
-		log.Println("could not parse certificate")
+		level.Info(km.logger).Log("msg", "new certificate required: could not parse certificate")
 		return true
 	}
 	cert, ok := pk.(*ssh.Certificate)
 	if !ok {
-		log.Println("certificate is incorrect format")
+		level.Info(km.logger).Log("msg", "new certificate required: certificate is incorrect format")
 		return true
 	}
 	now := uint64(time.Now().Unix())
 
 	if now > cert.ValidBefore {
-		log.Println("certificate validity has expired")
+		level.Info(km.logger).Log("msg", "new certificate required: certificate validity has expired")
 		return true
 	}
 
 	if now < cert.ValidAfter {
-		log.Println("certificate is not yet valid")
+		level.Info(km.logger).Log("msg", "new certificate required: certificate is not yet valid")
 		return true
 	}
 
-	log.Println("found existing valid certificate")
+	level.Info(km.logger).Log("msg", "found existing valid certificate")
 
 	kh, err := km.frw.ReadFile(path.Join(km.cfg.KeyFileDir(), "known_hosts"))
 	if err != nil {
-		log.Println("cannot not read known hosts file")
+		level.Info(km.logger).Log("msg", "new certificate required: cannot not read known hosts file")
 		return true
 	}
 	_, _, _, _, _, err = ssh.ParseKnownHosts(kh)
 	if err != nil {
-		log.Println("cannot parse known_hosts file")
+		level.Info(km.logger).Log("msg", "new certificate required: cannot parse known_hosts file")
 		return true
 	}
 
-	log.Println("found valid known_hosts file")
-
+	level.Info(km.logger).Log("msg", "found valid known_hosts file")
 	return false
 }
 
@@ -190,7 +199,7 @@ func (km KeyManager) generateKeyPair() error {
 }
 
 func (km KeyManager) generateCert() error {
-	log.Printf("generating certificate")
+	level.Info(km.logger).Log("msg", "generating new certificate")
 
 	pbk, err := km.readPubKeyFile()
 	if err != nil {

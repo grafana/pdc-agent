@@ -4,10 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/pdc-agent/pkg/pdc"
@@ -16,10 +18,12 @@ import (
 
 type mainFlags struct {
 	PrintHelp bool
+	LogLevel  string
 }
 
 func (mf *mainFlags) RegisterFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&mf.PrintHelp, "h", false, "Print help")
+	fs.StringVar(&mf.LogLevel, "log.level", "info", `"debug", "info", "warn" or "error"`)
 }
 
 func main() {
@@ -33,7 +37,9 @@ func main() {
 
 	sshConfig.Args = os.Args[1:]
 
-	if inLegacyMode() {
+	legacyMode := inLegacyMode()
+
+	if legacyMode {
 		sshConfig.LegacyMode = true
 		runLegacyMode(ctx, sshConfig)
 		return
@@ -41,8 +47,11 @@ func main() {
 
 	usageFn, err := parseFlags(mf.RegisterFlags, sshConfig.RegisterFlags, pdcClientCfg.RegisterFlags)
 	if err != nil {
-		log.Fatal("cannot parse flags")
+		fmt.Println("cannot parse flags")
+		os.Exit(1)
 	}
+
+	logger := setupLogger(mf.LogLevel)
 
 	if mf.PrintHelp {
 		usageFn()
@@ -51,27 +60,27 @@ func main() {
 
 	sshConfig.PDC = *pdcClientCfg
 
-	pdcClient, err := pdc.NewClient(pdcClientCfg)
+	pdcClient, err := pdc.NewClient(pdcClientCfg, logger)
 	if err != nil {
-		log.Fatalf("cannot initialise PDC client: %s", err)
+		level.Error(logger).Log("msg", fmt.Sprintf("cannot initialise PDC client: %s", err))
+		os.Exit(1)
 	}
 
 	// Whilst KeyManager is not passed to SSHClient, we need KM to have run before SSHClient is running.
-	km := ssh.NewKeyManager(sshConfig, pdcClient, &ssh.OSFileReadWriter{})
+	km := ssh.NewKeyManager(sshConfig, logger, pdcClient, &ssh.OSFileReadWriter{})
 	err = services.StartAndAwaitRunning(ctx, km)
 	if err != nil {
-		log.Fatalf("cannot start key manager: %s", err.Error())
+		level.Error(logger).Log("msg", fmt.Sprintf("cannot start key manager: %s", err))
+		os.Exit(1)
 	}
 
 	// Create the SSH Service
-	sshClient, err := ssh.NewClient(sshConfig)
-	if err != nil {
-		log.Fatalf("cannot declare ssh client: %s", err.Error())
-	}
+	sshClient := ssh.NewClient(sshConfig, logger)
 	// Start the ssh client
 	err = services.StartAndAwaitRunning(ctx, sshClient)
 	if err != nil {
-		log.Fatalf("cannot start ssh client: %s", err.Error())
+		level.Error(logger).Log("msg", fmt.Sprintf("cannot start ssh client: %s", err))
+		os.Exit(1)
 	}
 
 	// Wait for the ssh client to exit
@@ -109,7 +118,6 @@ func inLegacyMode() bool {
 	args := os.Args[1:]
 
 	for _, a := range args {
-		log.Println(a)
 		if a == "-p" || a == "-i" || a == "-R" || a == "-o" {
 			return true
 		}
@@ -119,15 +127,23 @@ func inLegacyMode() bool {
 }
 
 func runLegacyMode(ctx context.Context, sshConfig *ssh.Config) {
-	sshClient, err := ssh.NewClient(sshConfig)
-	if err != nil {
-		log.Fatalf("cannot declare ssh client: %s", err.Error())
-	}
+	logger := log.NewLogfmtLogger(os.Stdout)
+	sshClient := ssh.NewClient(sshConfig, logger)
 	// Start the ssh client
-	err = services.StartAndAwaitRunning(ctx, sshClient)
+	err := services.StartAndAwaitRunning(ctx, sshClient)
 	if err != nil {
-		log.Fatalf("cannot start ssh client: %s", err.Error())
+		level.Error(logger).Log("msg", fmt.Sprintf("cannot start ssh client: %s", err))
+		os.Exit(1)
 	}
 	// Wait for the ssh client to exit
 	_ = sshClient.AwaitTerminated(context.Background())
+}
+
+// setupLogger with level filter.
+func setupLogger(lvl string) log.Logger {
+	logger := log.NewLogfmtLogger(os.Stdout)
+	logger = level.NewFilter(logger, level.Allow(level.ParseDefault(lvl, level.DebugValue())))
+	logger = log.With(logger, "caller", log.DefaultCaller)
+
+	return logger
 }

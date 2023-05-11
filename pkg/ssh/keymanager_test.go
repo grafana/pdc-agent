@@ -10,13 +10,14 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io/fs"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path"
 	"testing"
 	"time"
+
+	"github.com/go-kit/log"
 
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/pdc-agent/pkg/pdc"
@@ -76,12 +77,12 @@ azl0ZGNvOFFqN0pIcFR0WnFBRm12c1E9PQo=
 )
 
 func TestKeyManager_StartingAndStopping(t *testing.T) {
-	//
+	logger := log.NewNopLogger()
 	cfg := ssh.DefaultConfig()
 	cfg.URL = mustParseURL("ssh.local")
 
 	// given a Key manager
-	km := ssh.NewKeyManager(cfg, mockClient{}, &mockFileReadWriter{data: map[string][]byte{}})
+	km := ssh.NewKeyManager(cfg, logger, mockClient{}, &mockFileReadWriter{data: map[string][]byte{}})
 	require.NotNil(t, km)
 
 	ctx := context.Background()
@@ -245,11 +246,13 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				tc.setupFn(t, frw, cfg)
 			}
 
-			client, err := pdc.NewClient(&pdcCfg)
+			logger := log.NewNopLogger()
+
+			client, err := pdc.NewClient(&pdcCfg, logger)
 			require.Nil(t, err)
 
 			// create svc under test
-			svc := ssh.NewKeyManager(cfg, client, frw)
+			svc := ssh.NewKeyManager(cfg, logger, client, frw)
 			err = services.StartAndAwaitRunning(ctx, svc)
 
 			// test svc
@@ -336,8 +339,7 @@ func mockPDC(t *testing.T, method, path string, code int) (u *url.URL, called *b
 
 func mustParseCert(t *testing.T) []byte {
 	t.Helper()
-	block, rest := pem.Decode([]byte(expectedCert))
-	log.Printf("%s", rest)
+	block, _ := pem.Decode([]byte(expectedCert))
 	return block.Bytes
 
 }

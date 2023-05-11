@@ -10,10 +10,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"path"
+
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 
 	"github.com/grafana/pdc-agent/pkg/httpclient"
 	"golang.org/x/crypto/ssh"
@@ -92,7 +94,7 @@ func (sr *SigningResponse) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func NewClient(cfg *Config) (Client, error) {
+func NewClient(cfg *Config, logger log.Logger) (Client, error) {
 	if cfg.URL == nil {
 		return nil, errors.New("api.url cannot be nil")
 	}
@@ -100,12 +102,14 @@ func NewClient(cfg *Config) (Client, error) {
 	return &pdcClient{
 		cfg:        cfg,
 		httpClient: &http.Client{Transport: httpclient.UserAgentTransport(nil)},
+		logger:     logger,
 	}, nil
 }
 
 type pdcClient struct {
 	cfg        *Config
 	httpClient *http.Client
+	logger     log.Logger
 }
 
 func (c *pdcClient) SignSSHKey(ctx context.Context, key []byte) (*SigningResponse, error) {
@@ -144,7 +148,7 @@ func (c *pdcClient) call(ctx context.Context, method, rpath string, params map[s
 	// Prepare the request
 	req, err := http.NewRequestWithContext(ctx, method, url.String(), bytes.NewBuffer(jsonB))
 	if err != nil {
-		log.Println("error creating request")
+		level.Error(c.logger).Log("msg", "error creating PDC API request", "err", err)
 		return nil, ErrInternal
 	}
 
@@ -155,21 +159,21 @@ func (c *pdcClient) call(ctx context.Context, method, rpath string, params map[s
 	_, werr := encoder.Write([]byte(c.cfg.HostedGrafanaId + ":" + c.cfg.Token))
 	err = encoder.Close()
 	if werr != nil || err != nil {
-		log.Printf("Failed to encode values for Authorization header: %s\n", err)
-		return nil, err
+		level.Error(c.logger).Log("msg", "error encoding Authorization header", "err", err)
+		return nil, ErrInternal
 	}
 
 	req.Header.Add("Authorization", "Basic "+buf.String())
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		log.Printf("request failed: %s", err)
+		level.Error(c.logger).Log("msg", "error making request to PDC API", "err", err)
 		return nil, ErrInternal
 	}
 	defer resp.Body.Close()
 	respB, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("failed to read response: %s", err)
+		level.Error(c.logger).Log("msg", "error reading response from PDC API", "err", err)
 		return nil, ErrInternal
 	}
 	switch resp.StatusCode {
@@ -178,7 +182,7 @@ func (c *pdcClient) call(ctx context.Context, method, rpath string, params map[s
 	case http.StatusUnauthorized:
 		return respB, ErrInvalidCredentials
 	default:
-		log.Println("unknown response from pdc: " + fmt.Sprintf("%d", resp.StatusCode))
+		level.Error(c.logger).Log("msg", "unknown response from PDC API", "code", resp.StatusCode)
 		return respB, ErrInternal
 	}
 }

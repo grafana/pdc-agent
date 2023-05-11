@@ -2,16 +2,17 @@ package ssh
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"net/url"
 	"os"
 	"os/exec"
 	"path"
 	"strings"
 	"time"
+
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/pdc-agent/pkg/pdc"
@@ -80,35 +81,33 @@ type SSHClient struct {
 	*services.BasicService
 	cfg    *Config
 	SSHCmd string // SSH command to run, defaults to "ssh". Require for testing.
+	logger log.Logger
 }
 
 // NewClient returns a new SSH client
-func NewClient(cfg *Config) (*SSHClient, error) {
-	if cfg.URL == nil {
-		return nil, errors.New("ssh-url cannot be nil")
-	}
+func NewClient(cfg *Config, logger log.Logger) *SSHClient {
 	client := &SSHClient{
 		cfg:    cfg,
 		SSHCmd: "ssh",
+		logger: logger,
 	}
 
 	client.BasicService = services.NewIdleService(client.starting, client.stopping)
-	return client, nil
+	return client
 }
 
 func (s *SSHClient) starting(ctx context.Context) error {
-	log.Println("starting ssh client")
+	level.Info(s.logger).Log("msg", "starting ssh client")
 	go func() {
 		for {
 
 			flags, err := s.SSHFlagsFromConfig()
 			if err != nil {
-				log.Printf("could not parse flags: %s\n", err)
+				level.Error(s.logger).Log("msg", fmt.Sprintf("could not parse flags: %s", err))
 				return
 			}
 
-			log.Println("parsed flags;")
-			log.Println(s.SSHFlagsFromConfig())
+			level.Debug(s.logger).Log("msg", fmt.Sprintf("parsed flags: %v", flags))
 			cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
@@ -116,7 +115,8 @@ func (s *SSHClient) starting(ctx context.Context) error {
 			if ctx.Err() != nil {
 				break // context was canceled
 			}
-			log.Println("ssh client exited, restarting")
+
+			level.Error(s.logger).Log("msg", "ssh client exited. restarting")
 			// backoff
 			// TODO: Implement exponential backoff
 			time.Sleep(1 * time.Second)
@@ -126,7 +126,7 @@ func (s *SSHClient) starting(ctx context.Context) error {
 }
 
 func (s *SSHClient) stopping(err error) error {
-	log.Println("stopping ssh client")
+	level.Info(s.logger).Log("msg", "stopping ssh client")
 	return err
 }
 
@@ -137,7 +137,7 @@ func (s *SSHClient) stopping(err error) error {
 func (s *SSHClient) SSHFlagsFromConfig() ([]string, error) {
 
 	if s.cfg.LegacyMode {
-		log.Println("running in legacy mode")
+		level.Warn(s.logger).Log("msg", "running in legacy mode")
 		return s.cfg.Args, nil
 	}
 
