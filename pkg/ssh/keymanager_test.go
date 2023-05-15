@@ -141,7 +141,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				_ = os.WriteFile(cfg.KeyFile, []byte("invalid private key"), 0600)
 				_ = os.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
 				_ = os.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
-				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), "known_hosts"), kh, 0644)
+				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), kh, 0644)
 
 			},
 			assertFn:           assertExpectedFiles,
@@ -155,7 +155,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				_ = os.WriteFile(cfg.KeyFile, privKey, 0600)
 				_ = os.WriteFile(cfg.KeyFile+".pub", []byte("not a public key"), 0644)
 				_ = os.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
-				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), "known_hosts"), kh, 0644)
+				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), kh, 0644)
 			},
 			assertFn:           assertExpectedFiles,
 			wantSigningRequest: true,
@@ -168,7 +168,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				_ = os.WriteFile(cfg.KeyFile, privKey, 0600)
 				_ = os.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
 				_ = os.WriteFile(cfg.KeyFile+"-cert.pub", []byte("invalid cert"), 0644)
-				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), "known_hosts"), kh, 0644)
+				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), kh, 0644)
 			},
 			assertFn:           assertExpectedFiles,
 			wantSigningRequest: true,
@@ -181,7 +181,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				_ = os.WriteFile(cfg.KeyFile, privKey, 0600)
 				_ = os.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
 				_ = os.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
-				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), "known_hosts"), []byte("invalid known_hosts"), 0644)
+				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), []byte("invalid known_hosts"), 0644)
 
 			},
 			wantSigningRequest: true,
@@ -200,7 +200,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				_ = os.WriteFile(cfg.KeyFile, privKey, 0600)
 				_ = os.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
 				_ = os.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
-				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), "known_hosts"), kh, 0644)
+				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), kh, 0644)
 			},
 			wantSigningRequest: false,
 			assertFn: func(t *testing.T, cfg *ssh.Config) {
@@ -213,7 +213,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				assert.NotNil(t, pubKeyFile)
 
 				kfd := cfg.KeyFileDir()
-				_, err = os.ReadFile(path.Join(kfd, "known_hosts"))
+				_, err = os.ReadFile(path.Join(kfd, ssh.KnownHostsFile))
 				assert.NoError(t, err)
 
 				cert, err := os.ReadFile(cfg.KeyFile + "-cert.pub")
@@ -231,7 +231,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				_ = os.WriteFile(cfg.KeyFile, privKey, 0600)
 				_ = os.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
 				_ = os.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
-				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), "known_hosts"), kh, 0644)
+				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), kh, 0644)
 			},
 			wantSigningRequest: true,
 			assertFn:           assertExpectedFiles,
@@ -244,7 +244,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				_ = os.WriteFile(cfg.KeyFile, privKey, 0600)
 				_ = os.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
 				_ = os.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
-				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), "known_hosts"), kh, 0644)
+				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), kh, 0644)
 				cfg.ForceKeyFileOverwrite = true
 			},
 			wantSigningRequest: true,
@@ -409,7 +409,7 @@ func assertExpectedFiles(t *testing.T, cfg *ssh.Config) {
 	assert.NotNil(t, pubKeyFile)
 
 	kfd := cfg.KeyFileDir()
-	kh, err := os.ReadFile(kfd + "known_hosts")
+	kh, err := os.ReadFile(kfd + ssh.KnownHostsFile)
 	assert.NoError(t, err)
 	assert.Equal(t, knownHosts, string(kh))
 

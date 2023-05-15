@@ -154,7 +154,7 @@ func (s *Client) SSHFlagsFromConfig() ([]string, error) {
 		fmt.Sprintf("%d", s.cfg.Port),
 		"-R", "0",
 		"-vv",
-		"-o", fmt.Sprintf("UserKnownHostsFile=%s/known_hosts", keyFileDir),
+		"-o", fmt.Sprintf("UserKnownHostsFile=%s/%s", keyFileDir, KnownHostsFile),
 		"-o", fmt.Sprintf("CertificateFile=%s-cert.pub", s.cfg.KeyFile),
 	}
 

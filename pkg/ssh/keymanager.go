@@ -22,7 +22,8 @@ import (
 
 const (
 	// SSHKeySize is the size of the SSH key.
-	SSHKeySize = 4096
+	SSHKeySize     = 4096
+	KnownHostsFile = "pdc_known_hosts"
 )
 
 // KeyManager manages SSH keys and certificates. It ensures that the SSH keys,
@@ -174,18 +175,18 @@ func (km KeyManager) newCertRequired() bool {
 
 	level.Info(km.logger).Log("msg", "found existing valid certificate")
 
-	kh, err := os.ReadFile(path.Join(km.cfg.KeyFileDir(), "known_hosts"))
+	kh, err := os.ReadFile(path.Join(km.cfg.KeyFileDir(), KnownHostsFile))
 	if err != nil {
 		level.Info(km.logger).Log("msg", "new certificate required: cannot not read known hosts file")
 		return true
 	}
 	_, _, _, _, _, err = ssh.ParseKnownHosts(kh)
 	if err != nil {
-		level.Info(km.logger).Log("msg", "new certificate required: cannot parse known_hosts file")
+		level.Info(km.logger).Log("msg", fmt.Sprintf("new certificate required: cannot parse %s", KnownHostsFile))
 		return true
 	}
 
-	level.Info(km.logger).Log("msg", "found valid known_hosts file")
+	level.Info(km.logger).Log("msg", fmt.Sprintf("found valid %s", KnownHostsFile))
 	return false
 }
 
@@ -264,7 +265,7 @@ func (km KeyManager) writePubKeyFile(data []byte) error {
 }
 
 func (km KeyManager) writeKnownHostsFile(data []byte) error {
-	path := path.Join(km.cfg.KeyFileDir(), "known_hosts")
+	path := path.Join(km.cfg.KeyFileDir(), KnownHostsFile)
 	return os.WriteFile(path, data, 0644)
 }
 
