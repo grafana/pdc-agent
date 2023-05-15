@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -19,11 +20,15 @@ import (
 type mainFlags struct {
 	PrintHelp bool
 	LogLevel  string
+	Cluster   string
+	Domain    string
 }
 
 func (mf *mainFlags) RegisterFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&mf.PrintHelp, "h", false, "Print help")
 	fs.StringVar(&mf.LogLevel, "log.level", "info", `"debug", "info", "warn" or "error"`)
+	fs.StringVar(&mf.Cluster, "cluster", "", "the PDC cluster to connect to use")
+	fs.StringVar(&mf.Domain, "domain", "grafana.net", "the domain of the PDC cluster")
 }
 
 func main() {
@@ -56,7 +61,15 @@ func main() {
 		return
 	}
 
+	apiURL, gatewayURL, err := createURLsFromCluster(mf.Cluster, mf.Domain)
+	if err != nil {
+		level.Error(logger).Log("err", err)
+		os.Exit(1)
+	}
+
+	pdcClientCfg.URL = apiURL
 	sshConfig.PDC = *pdcClientCfg
+	sshConfig.URL = gatewayURL
 
 	err = run(logger, sshConfig, pdcClientCfg)
 	if err != nil {
@@ -91,6 +104,20 @@ func run(logger log.Logger, sshConfig *ssh.Config, pdcConfig *pdc.Config) error 
 	_ = sshClient.AwaitTerminated(context.Background())
 
 	return nil
+}
+
+func createURLsFromCluster(cluster string, domain string) (api *url.URL, gateway *url.URL, err error) {
+
+	apiURL := fmt.Sprintf("https://private-datasource-connect-api-%s.%s", cluster, domain)
+	gatewayURL := fmt.Sprintf("private-datasource-connect-%s.%s", cluster, domain)
+
+	api, err = url.Parse(apiURL)
+	if err != nil {
+		return
+	}
+
+	gateway, err = url.Parse(gatewayURL)
+	return
 }
 
 // parseFlags creates a flagset, registers all given flags, and parses. It

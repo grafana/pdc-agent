@@ -38,17 +38,6 @@ type Config struct {
 func (cfg *Config) RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&cfg.Token, "token", "", "The token to use to authenticate with Grafana Cloud. It must have the pdc-signing:write scope")
 	fs.StringVar(&cfg.HostedGrafanaID, "gcloud-hosted-grafana-id", "", "The ID of the Hosted Grafana instance to connect to")
-	fs.Func("api-url", "The URL to the PDC API", cfg.parseAPIURL)
-}
-
-func (cfg *Config) parseAPIURL(s string) error {
-	url, err := url.Parse(s)
-	if err != nil {
-		return err
-	}
-
-	cfg.URL = url
-	return nil
 }
 
 // Client is a PDC API client

@@ -49,19 +49,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 	cfg.SSHFlags = []string{}
 	f.StringVar(&cfg.KeyFile, "ssh-key-file", def.KeyFile, "The path to the SSH key file.")
-	f.Func("ssh-url", "url of the PDC SSH gateway", cfg.parseGatewayURL)
 	f.Func("ssh-flag", "Additional flags to be passed to ssh. Can be set more than once.", cfg.addSSHFlag)
-
-}
-
-func (cfg *Config) parseGatewayURL(s string) error {
-	url, err := url.Parse(s)
-	if err != nil {
-		return err
-	}
-
-	cfg.URL = url
-	return nil
 }
 
 func (cfg Config) KeyFileDir() string {
