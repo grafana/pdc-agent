@@ -84,14 +84,16 @@ type Client struct {
 	cfg    *Config
 	SSHCmd string // SSH command to run, defaults to "ssh". Require for testing.
 	logger log.Logger
+	km     KeyManager
 }
 
 // NewClient returns a new SSH client in an idle state
-func NewClient(cfg *Config, logger log.Logger) *Client {
+func NewClient(cfg *Config, logger log.Logger, km KeyManager) *Client {
 	client := &Client{
 		cfg:    cfg,
 		SSHCmd: "ssh",
 		logger: logger,
+		km:     km,
 	}
 
 	client.BasicService = services.NewIdleService(client.starting, client.stopping)
@@ -122,6 +124,12 @@ func (s *Client) starting(ctx context.Context) error {
 			// backoff
 			// TODO: Implement exponential backoff
 			time.Sleep(1 * time.Second)
+
+			// check cert validity before restart, create new cert if required
+			err = s.km.EnsureCertExists(false)
+			if err != nil {
+				level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", err)
+			}
 		}
 	}()
 	return nil

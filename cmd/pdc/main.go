@@ -76,7 +76,6 @@ func run(logger log.Logger, sshConfig *ssh.Config, pdcConfig *pdc.Config) error 
 		return err
 	}
 
-	// Whilst KeyManager is not passed to ssh.Client, we need KM to have run before ssh.Client is running.
 	km := ssh.NewKeyManager(sshConfig, logger, pdcClient)
 	err = services.StartAndAwaitRunning(ctx, km)
 	if err != nil {
@@ -84,8 +83,8 @@ func run(logger log.Logger, sshConfig *ssh.Config, pdcConfig *pdc.Config) error 
 		return err
 	}
 
-	// Create the SSH Service
-	sshClient := ssh.NewClient(sshConfig, logger)
+	// Create the SSH Service. KeyManager must be in running state when passed to ssh.NewClient
+	sshClient := ssh.NewClient(sshConfig, logger, km)
 	// Start the ssh client
 	err = services.StartAndAwaitRunning(ctx, sshClient)
 	if err != nil {
@@ -142,7 +141,7 @@ func runLegacyMode(sshConfig *ssh.Config) error {
 	defer stop()
 
 	logger := log.NewLogfmtLogger(os.Stdout)
-	sshClient := ssh.NewClient(sshConfig, logger)
+	sshClient := ssh.NewClient(sshConfig, logger, ssh.NewNopKeyManager())
 	// Start the ssh client
 	err := services.StartAndAwaitRunning(ctx, sshClient)
 	if err != nil {

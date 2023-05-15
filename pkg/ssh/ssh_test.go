@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/pdc-agent/pkg/pdc"
 	"github.com/grafana/pdc-agent/pkg/ssh"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func mustParseURL(s string) *url.URL {
@@ -24,7 +25,7 @@ func mustParseURL(s string) *url.URL {
 
 func TestStartingAndStopping(t *testing.T) {
 	// Given an SSH client
-	client := newTestClient(&ssh.Config{Args: []string{"-V"}})
+	client := newTestClient(t, &ssh.Config{Args: []string{"-V"}})
 
 	ctx := context.Background()
 
@@ -51,11 +52,23 @@ func TestStartingAndStopping(t *testing.T) {
 
 // testClient returns a new SSH client with a mocked command
 // see https://npf.io/2015/06/testing-exec-command/
-func newTestClient(cfg *ssh.Config) *ssh.Client {
+func newTestClient(t *testing.T, cfg *ssh.Config) *ssh.Client {
+	t.Helper()
 	logger := log.NewNopLogger()
-	cfg.Args = append([]string{"-test.run=TestFakeSSHCmd", "--"}, cfg.Args...)
-	cfg.URL = mustParseURL("localhost")
-	client := ssh.NewClient(cfg, logger)
+	if len(cfg.Args) == 0 {
+		cfg.Args = append([]string{"-test.run=TestFakeSSHCmd", "--"}, cfg.Args...)
+	}
+	if cfg.URL == nil {
+		cfg.URL = mustParseURL("localhost")
+	}
+	pdcCfg := pdc.Config{
+		URL: mustParseURL("test.api"),
+	}
+	pdcClient, err := pdc.NewClient(&pdcCfg, logger)
+	require.Nil(t, err)
+	km := ssh.NewKeyManager(cfg, logger, pdcClient)
+
+	client := ssh.NewClient(cfg, logger, km)
 	client.SSHCmd = os.Args[0]
 	return client
 }
@@ -68,8 +81,6 @@ func TestFakeSSHCmd(t *testing.T) {
 // Building this out to verify behaviour, not exactly sure that the function is
 // hanging off the right struct or organised appropriately.
 func TestClient_SSHArgs(t *testing.T) {
-	logger := log.NewNopLogger()
-
 	t.Run("defaults", func(t *testing.T) {
 		cfg := ssh.DefaultConfig()
 
@@ -79,7 +90,8 @@ func TestClient_SSHArgs(t *testing.T) {
 			HostedGrafanaID: "123",
 		}
 
-		sshClient := ssh.NewClient(cfg, logger)
+		sshClient := newTestClient(t, cfg)
+
 		result, err := sshClient.SSHFlagsFromConfig()
 
 		assert.Nil(t, err)
@@ -93,7 +105,7 @@ func TestClient_SSHArgs(t *testing.T) {
 		cfg.URL = mustParseURL("localhost")
 		cfg.Args = expectedArgs
 
-		sshClient := ssh.NewClient(cfg, logger)
+		sshClient := newTestClient(t, cfg)
 		result, err := sshClient.SSHFlagsFromConfig()
 
 		assert.Nil(t, err)
@@ -114,7 +126,7 @@ func TestClient_SSHArgs(t *testing.T) {
 			"-o testoption=2",
 		}
 
-		sshClient := ssh.NewClient(cfg, logger)
+		sshClient := newTestClient(t, cfg)
 		result, err := sshClient.SSHFlagsFromConfig()
 
 		assert.Nil(t, err)

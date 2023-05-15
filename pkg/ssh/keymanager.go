@@ -28,9 +28,19 @@ const (
 
 // KeyManager manages SSH keys and certificates. It ensures that the SSH keys,
 // certificates and known_hosts files exist in their configured locations.
+// EnsureCertExists should only be called once the service has started successfully.
+
+type KeyManager interface {
+	services.Service
+	EnsureCertExists(bool) error
+}
+
+// pdcKeyManager implements KeyManager. If needed, it gets new certificates signed
+// by the PDC API.
+//
 // If the service starts successfully, then the key and cert files will exist.
 // It will attempt to reuse existing keys and certs if they exist.
-type KeyManager struct {
+type pdcKeyManager struct {
 	*services.BasicService
 	cfg    *Config
 	client pdc.Client
@@ -38,8 +48,8 @@ type KeyManager struct {
 }
 
 // NewKeyManager returns a new KeyManager in an idle state
-func NewKeyManager(cfg *Config, logger log.Logger, client pdc.Client) *KeyManager {
-	km := KeyManager{
+func NewKeyManager(cfg *Config, logger log.Logger, client pdc.Client) KeyManager {
+	km := pdcKeyManager{
 		cfg:    cfg,
 		client: client,
 		logger: logger,
@@ -49,7 +59,7 @@ func NewKeyManager(cfg *Config, logger log.Logger, client pdc.Client) *KeyManage
 	return &km
 }
 
-func (km *KeyManager) starting(_ context.Context) error {
+func (km *pdcKeyManager) starting(_ context.Context) error {
 	level.Info(km.logger).Log("msg", "starting key manager")
 
 	newCertRequired := km.cfg.ForceKeyFileOverwrite
@@ -62,38 +72,17 @@ func (km *KeyManager) starting(_ context.Context) error {
 		}
 	}
 
-	return km.ensureCertExists(newCertRequired)
+	return km.EnsureCertExists(newCertRequired)
 }
 
-func (km *KeyManager) stopping(_ error) error {
+func (km *pdcKeyManager) stopping(_ error) error {
 	level.Info(km.logger).Log("msg", "stopping key manager")
 	return nil
 }
 
-// ensureKeysExist checks for the existence of valid SSH keys. If they exist,
-// it does nothing. If they don't, it creates them. It returns a boolean
-// indicating whether new keys were created, and an error.
-func (km KeyManager) ensureKeysExist() (bool, error) {
-
-	// check if files already exist
-	r := km.newKeysRequired()
-
-	if !r {
-		return false, nil
-	}
-
-	// ensure the key file dir exists before we try and write there
-	err := os.MkdirAll(km.cfg.KeyFileDir(), 0774)
-	if err != nil && !os.IsExist(err) {
-		return false, err
-	}
-
-	return true, km.generateKeyPair()
-}
-
-// ensureCertExists checks for the existence of a valid SSH certificate and
+// EnsureCertExists checks for the existence of a valid SSH certificate and
 // regenerates one if it cannot find one, or if forceCreate is true.
-func (km KeyManager) ensureCertExists(forceCreate bool) error {
+func (km pdcKeyManager) EnsureCertExists(forceCreate bool) error {
 	newCertRequired := forceCreate
 
 	if newCertRequired {
@@ -117,7 +106,28 @@ func (km KeyManager) ensureCertExists(forceCreate bool) error {
 	return nil
 }
 
-func (km KeyManager) newKeysRequired() bool {
+// ensureKeysExist checks for the existence of valid SSH keys. If they exist,
+// it does nothing. If they don't, it creates them. It returns a boolean
+// indicating whether new keys were created, and an error.
+func (km pdcKeyManager) ensureKeysExist() (bool, error) {
+
+	// check if files already exist
+	r := km.newKeysRequired()
+
+	if !r {
+		return false, nil
+	}
+
+	// ensure the key file dir exists before we try and write there
+	err := os.MkdirAll(km.cfg.KeyFileDir(), 0774)
+	if err != nil && !os.IsExist(err) {
+		return false, err
+	}
+
+	return true, km.generateKeyPair()
+}
+
+func (km pdcKeyManager) newKeysRequired() bool {
 	kb, err := km.readKeyFile()
 	if err != nil {
 		level.Info(km.logger).Log("msg", "new keys required: could not read private key file")
@@ -145,7 +155,7 @@ func (km KeyManager) newKeysRequired() bool {
 	return false
 }
 
-func (km KeyManager) newCertRequired() bool {
+func (km pdcKeyManager) newCertRequired() bool {
 	cb, err := km.readCertFile()
 	if err != nil {
 		level.Info(km.logger).Log("msg", "new certificate required: could not read certificate file")
@@ -190,7 +200,7 @@ func (km KeyManager) newCertRequired() bool {
 	return false
 }
 
-func (km KeyManager) generateKeyPair() error {
+func (km pdcKeyManager) generateKeyPair() error {
 
 	// Generate a new private/public keypair for OpenSSH
 	pubKey, privKey, _ := ed25519.GenerateKey(rand.Reader)
@@ -211,7 +221,7 @@ func (km KeyManager) generateKeyPair() error {
 	return km.writePubKeyFile(ssh.MarshalAuthorizedKey(sshPubKey))
 }
 
-func (km KeyManager) generateCert() error {
+func (km pdcKeyManager) generateCert() error {
 	level.Info(km.logger).Log("msg", "generating new certificate")
 
 	pbk, err := km.readPubKeyFile()
@@ -241,35 +251,51 @@ func (km KeyManager) generateCert() error {
 	return nil
 }
 
-func (km KeyManager) readKeyFile() ([]byte, error) {
+func (km pdcKeyManager) readKeyFile() ([]byte, error) {
 	return os.ReadFile(km.cfg.KeyFile)
 }
 
-func (km KeyManager) readPubKeyFile() ([]byte, error) {
+func (km pdcKeyManager) readPubKeyFile() ([]byte, error) {
 	path := km.cfg.KeyFile + ".pub"
 	return os.ReadFile(path)
 }
 
-func (km KeyManager) readCertFile() ([]byte, error) {
+func (km pdcKeyManager) readCertFile() ([]byte, error) {
 	path := km.cfg.KeyFile + "-cert.pub"
 	return os.ReadFile(path)
 }
 
-func (km KeyManager) writeKeyFile(data []byte) error {
+func (km pdcKeyManager) writeKeyFile(data []byte) error {
 	return os.WriteFile(km.cfg.KeyFile, data, 0600)
 }
 
-func (km KeyManager) writePubKeyFile(data []byte) error {
+func (km pdcKeyManager) writePubKeyFile(data []byte) error {
 	path := km.cfg.KeyFile + ".pub"
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0600)
 }
 
-func (km KeyManager) writeKnownHostsFile(data []byte) error {
+func (km pdcKeyManager) writeKnownHostsFile(data []byte) error {
 	path := path.Join(km.cfg.KeyFileDir(), KnownHostsFile)
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0600)
 }
 
-func (km KeyManager) writeCertFile(data []byte) error {
+func (km pdcKeyManager) writeCertFile(data []byte) error {
 	path := path.Join(km.cfg.KeyFile + "-cert.pub")
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0600)
+}
+
+// nopKeyManager is a no-op implementation of KeyManager.
+type nopKeyManager struct {
+	*services.BasicService
+}
+
+func NewNopKeyManager() KeyManager {
+	km := &nopKeyManager{}
+
+	km.BasicService = services.NewIdleService(nil, nil)
+	return km
+}
+
+func (km *nopKeyManager) EnsureCertExists(_ bool) error {
+	return nil
 }
