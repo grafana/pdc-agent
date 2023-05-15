@@ -77,7 +77,7 @@ func run(logger log.Logger, sshConfig *ssh.Config, pdcConfig *pdc.Config) error 
 	}
 
 	// Whilst KeyManager is not passed to ssh.Client, we need KM to have run before ssh.Client is running.
-	km := ssh.NewKeyManager(sshConfig, logger, pdcClient, &ssh.OSFileReadWriter{})
+	km := ssh.NewKeyManager(sshConfig, logger, pdcClient)
 	err = services.StartAndAwaitRunning(ctx, km)
 	if err != nil {
 		level.Error(logger).Log("msg", fmt.Sprintf("cannot start key manager: %s", err))

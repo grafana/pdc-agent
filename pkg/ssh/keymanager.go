@@ -7,7 +7,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path"
 	"time"
@@ -33,16 +32,14 @@ const (
 type KeyManager struct {
 	*services.BasicService
 	cfg    *Config
-	frw    FileReadWriter
 	client pdc.Client
 	logger log.Logger
 }
 
 // NewKeyManager returns a new KeyManager in an idle state
-func NewKeyManager(cfg *Config, logger log.Logger, client pdc.Client, frw FileReadWriter) *KeyManager {
+func NewKeyManager(cfg *Config, logger log.Logger, client pdc.Client) *KeyManager {
 	km := KeyManager{
 		cfg:    cfg,
-		frw:    frw,
 		client: client,
 		logger: logger,
 	}
@@ -82,6 +79,12 @@ func (km KeyManager) ensureKeysExist() (bool, error) {
 
 	if !r {
 		return false, nil
+	}
+
+	// ensure the key file dir exists before we try and write there
+	err := os.MkdirAll(km.cfg.KeyFileDir(), 0774)
+	if err != nil && !os.IsExist(err) {
+		return false, err
 	}
 
 	return true, km.generateKeyPair()
@@ -171,7 +174,7 @@ func (km KeyManager) newCertRequired() bool {
 
 	level.Info(km.logger).Log("msg", "found existing valid certificate")
 
-	kh, err := km.frw.ReadFile(path.Join(km.cfg.KeyFileDir(), "known_hosts"))
+	kh, err := os.ReadFile(path.Join(km.cfg.KeyFileDir(), "known_hosts"))
 	if err != nil {
 		level.Info(km.logger).Log("msg", "new certificate required: cannot not read known hosts file")
 		return true
@@ -238,50 +241,34 @@ func (km KeyManager) generateCert() error {
 }
 
 func (km KeyManager) readKeyFile() ([]byte, error) {
-	return km.frw.ReadFile(km.cfg.KeyFile)
+	return os.ReadFile(km.cfg.KeyFile)
 }
 
 func (km KeyManager) readPubKeyFile() ([]byte, error) {
 	path := km.cfg.KeyFile + ".pub"
-	return km.frw.ReadFile(path)
+	return os.ReadFile(path)
 }
 
 func (km KeyManager) readCertFile() ([]byte, error) {
 	path := km.cfg.KeyFile + "-cert.pub"
-	return km.frw.ReadFile(path)
+	return os.ReadFile(path)
 }
 
 func (km KeyManager) writeKeyFile(data []byte) error {
-	return km.frw.WriteFile(km.cfg.KeyFile, data, 0600)
+	return os.WriteFile(km.cfg.KeyFile, data, 0600)
 }
 
 func (km KeyManager) writePubKeyFile(data []byte) error {
 	path := km.cfg.KeyFile + ".pub"
-	return km.frw.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0644)
 }
 
 func (km KeyManager) writeKnownHostsFile(data []byte) error {
 	path := path.Join(km.cfg.KeyFileDir(), "known_hosts")
-	return km.frw.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0644)
 }
 
 func (km KeyManager) writeCertFile(data []byte) error {
 	path := path.Join(km.cfg.KeyFile + "-cert.pub")
-	return km.frw.WriteFile(path, data, 0644)
-}
-
-type FileReadWriter interface {
-	WriteFile(path string, data []byte, perm fs.FileMode) error
-	ReadFile(path string) ([]byte, error)
-}
-
-type OSFileReadWriter struct {
-}
-
-func (f OSFileReadWriter) ReadFile(path string) ([]byte, error) {
-	return os.ReadFile(path)
-}
-
-func (f *OSFileReadWriter) WriteFile(path string, data []byte, perm fs.FileMode) error {
-	return os.WriteFile(path, data, perm)
+	return os.WriteFile(path, data, 0644)
 }

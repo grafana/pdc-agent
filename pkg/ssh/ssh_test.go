@@ -82,7 +82,7 @@ func TestClient_SSHArgs(t *testing.T) {
 		result, err := sshClient.SSHFlagsFromConfig()
 
 		assert.Nil(t, err)
-		assert.Equal(t, strings.Split("-i ~/.ssh/gcloud_pdc 123@host.grafana.net -p 22 -R 0 -vv -o UserKnownHostsFile=~/.ssh/known_hosts -o CertificateFile=~/.ssh/gcloud_pdc-cert.pub", " "), result)
+		assert.Equal(t, strings.Split("-i .ssh/gcloud_pdc 123@host.grafana.net -p 22 -R 0 -vv -o UserKnownHostsFile=.ssh/known_hosts -o CertificateFile=.ssh/gcloud_pdc-cert.pub", " "), result)
 	})
 
 	t.Run("legacy args (deprecated)", func(t *testing.T) {
@@ -117,7 +117,7 @@ func TestClient_SSHArgs(t *testing.T) {
 		result, err := sshClient.SSHFlagsFromConfig()
 
 		assert.Nil(t, err)
-		assert.Equal(t, strings.Split("-i ~/.ssh/gcloud_pdc 123@host.grafana.net -p 22 -R 0 -vv -o UserKnownHostsFile=~/.ssh/known_hosts -o CertificateFile=~/.ssh/gcloud_pdc-cert.pub -vvv -o testoption=2", " "), result)
+		assert.Equal(t, strings.Split("-i .ssh/gcloud_pdc 123@host.grafana.net -p 22 -R 0 -vv -o UserKnownHostsFile=.ssh/known_hosts -o CertificateFile=.ssh/gcloud_pdc-cert.pub -vvv -o testoption=2", " "), result)
 
 	})
 }

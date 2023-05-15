@@ -40,11 +40,10 @@ generate a pair and request a certificate.`
 
 // DefaultConfig returns a Config with some sensible defaults set
 func DefaultConfig() *Config {
-
 	return &Config{
 		Port:    22,
 		PDC:     pdc.Config{},
-		KeyFile: "~/.ssh/gcloud_pdc",
+		KeyFile: ".ssh/gcloud_pdc",
 	}
 }
 
