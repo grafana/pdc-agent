@@ -40,10 +40,15 @@ generate a pair and request a certificate.`
 
 // DefaultConfig returns a Config with some sensible defaults set
 func DefaultConfig() *Config {
+	root, err := os.UserHomeDir()
+	if err != nil {
+		// ??? Maybe lets use the current dir?
+		root = ""
+	}
 	return &Config{
 		Port:    22,
 		PDC:     pdc.Config{},
-		KeyFile: ".ssh/gcloud_pdc",
+		KeyFile: path.Join(root, ".ssh/gcloud_pdc"),
 	}
 }
 

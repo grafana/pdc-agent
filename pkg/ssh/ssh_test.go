@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"strings"
 	"testing"
 
@@ -95,7 +96,7 @@ func TestClient_SSHArgs(t *testing.T) {
 		result, err := sshClient.SSHFlagsFromConfig()
 
 		assert.Nil(t, err)
-		assert.Equal(t, strings.Split(fmt.Sprintf("-i .ssh/gcloud_pdc 123@host.grafana.net -p 22 -R 0 -vv -o UserKnownHostsFile=.ssh/%s -o CertificateFile=.ssh/gcloud_pdc-cert.pub", ssh.KnownHostsFile), " "), result)
+		assert.Equal(t, strings.Split(fmt.Sprintf("-i %s 123@host.grafana.net -p 22 -R 0 -vv -o UserKnownHostsFile=%s -o CertificateFile=%s", cfg.KeyFile, path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), cfg.KeyFile+"-cert.pub"), " "), result)
 	})
 
 	t.Run("legacy args (deprecated)", func(t *testing.T) {
@@ -130,7 +131,7 @@ func TestClient_SSHArgs(t *testing.T) {
 		result, err := sshClient.SSHFlagsFromConfig()
 
 		assert.Nil(t, err)
-		assert.Equal(t, strings.Split(fmt.Sprintf("-i .ssh/gcloud_pdc 123@host.grafana.net -p 22 -R 0 -vv -o UserKnownHostsFile=.ssh/%s -o CertificateFile=.ssh/gcloud_pdc-cert.pub -vvv -o testoption=2", ssh.KnownHostsFile), " "), result)
+		assert.Equal(t, strings.Split(fmt.Sprintf("-i %s 123@host.grafana.net -p 22 -R 0 -vv -o UserKnownHostsFile=%s -o CertificateFile=%s -vvv -o testoption=2", cfg.KeyFile, path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), cfg.KeyFile+"-cert.pub"), " "), result)
 
 	})
 }
