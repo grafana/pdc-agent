@@ -18,7 +18,6 @@ import (
 
 	"github.com/go-kit/log"
 
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/pdc-agent/pkg/pdc"
 	"github.com/grafana/pdc-agent/pkg/ssh"
 	"github.com/mikesmitty/edkey"
@@ -74,40 +73,6 @@ azl0ZGNvOFFqN0pIcFR0WnFBRm12c1E9PQo=
 -----END CERTIFICATE-----
 `
 )
-
-func TestKeyManager_StartingAndStopping(t *testing.T) {
-	logger := log.NewNopLogger()
-	cfg := ssh.DefaultConfig()
-	cfg.URL = mustParseURL("ssh.local")
-
-	cfg.KeyFile = path.Join(t.TempDir(), "testkey")
-
-	// given a Key manager
-	km := ssh.NewKeyManager(cfg, logger, mockClient{})
-	require.NotNil(t, km)
-
-	ctx := context.Background()
-
-	// When starting the km
-	err := km.StartAsync(ctx)
-	// Then the km should be in the starting state
-	assert.NoError(t, err)
-	assert.Equal(t, "Starting", km.State().String())
-
-	// And eventually move to the running state
-	err = km.AwaitRunning(ctx)
-	assert.NoError(t, err)
-	assert.Equal(t, "Running", km.State().String())
-
-	// When stopping the service
-	km.StopAsync()
-	assert.NoError(t, err)
-
-	// Then is should eventually move to the terminated state
-	err = km.AwaitTerminated(ctx)
-	assert.NoError(t, err)
-	assert.Equal(t, "Terminated", km.State().String())
-}
 
 func TestKeyManager_EnsureKeysExist(t *testing.T) {
 	testcases := []struct {
@@ -266,15 +231,13 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			client, err := pdc.NewClient(&pdcCfg, logger)
 			require.Nil(t, err)
 
-			// create svc under test
-			svc := ssh.NewKeyManager(cfg, logger, client)
-			err = services.StartAndAwaitRunning(ctx, svc)
-
-			// test svc
+			km := ssh.NewKeyManager(cfg, logger, client)
+			err = km.CreateKeys(ctx)
 			if tc.wantErr {
 				assert.Error(t, err)
 				return
 			}
+
 			require.Nil(t, err)
 
 			assert.Equal(t, tc.wantSigningRequest, *called)
@@ -282,25 +245,8 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			if tc.assertFn != nil {
 				tc.assertFn(t, cfg)
 			}
-
-			_ = services.StopAndAwaitTerminated(ctx, svc)
 		})
 	}
-}
-
-type mockClient struct {
-}
-
-func (mc mockClient) SignSSHKey(_ context.Context, _ []byte) (*pdc.SigningResponse, error) {
-
-	_, _, cert, knownhosts := generateKeys("", "")
-
-	pbk, _, _, _, _ := gossh.ParseAuthorizedKey(cert)
-	c, _ := pbk.(*gossh.Certificate)
-	return &pdc.SigningResponse{
-		Certificate: *c,
-		KnownHosts:  knownhosts,
-	}, nil
 }
 
 func mockPDC(t *testing.T, method, path string, code int) (u *url.URL, called *bool) {

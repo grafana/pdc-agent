@@ -80,11 +80,11 @@ type Client struct {
 	cfg    *Config
 	SSHCmd string // SSH command to run, defaults to "ssh". Require for testing.
 	logger log.Logger
-	km     KeyManager
+	km     *KeyManager
 }
 
 // NewClient returns a new SSH client in an idle state
-func NewClient(cfg *Config, logger log.Logger, km KeyManager) *Client {
+func NewClient(cfg *Config, logger log.Logger, km *KeyManager) *Client {
 	client := &Client{
 		cfg:    cfg,
 		SSHCmd: "ssh",
@@ -100,6 +100,14 @@ func (s *Client) starting(ctx context.Context) error {
 	level.Info(s.logger).Log("msg", "starting ssh client")
 	go func() {
 		for {
+			// check keys and cert validity before (re)start, create new cert if required
+			if s.km != nil {
+				err := s.km.CreateKeys(ctx)
+				if err != nil {
+					level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", err)
+					break
+				}
+			}
 
 			flags, err := s.SSHFlagsFromConfig()
 			if err != nil {
@@ -121,11 +129,6 @@ func (s *Client) starting(ctx context.Context) error {
 			// TODO: Implement exponential backoff
 			time.Sleep(1 * time.Second)
 
-			// check cert validity before restart, create new cert if required
-			err = s.km.EnsureCertExists(false)
-			if err != nil {
-				level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", err)
-			}
 		}
 	}()
 	return nil

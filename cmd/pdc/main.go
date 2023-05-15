@@ -77,11 +77,6 @@ func run(logger log.Logger, sshConfig *ssh.Config, pdcConfig *pdc.Config) error 
 	}
 
 	km := ssh.NewKeyManager(sshConfig, logger, pdcClient)
-	err = services.StartAndAwaitRunning(ctx, km)
-	if err != nil {
-		level.Error(logger).Log("msg", fmt.Sprintf("cannot start key manager: %s", err))
-		return err
-	}
 
 	// Create the SSH Service. KeyManager must be in running state when passed to ssh.NewClient
 	sshClient := ssh.NewClient(sshConfig, logger, km)
@@ -94,7 +89,6 @@ func run(logger log.Logger, sshConfig *ssh.Config, pdcConfig *pdc.Config) error 
 
 	// Wait for the ssh client to exit
 	_ = sshClient.AwaitTerminated(context.Background())
-	_ = km.AwaitTerminated(context.Background())
 
 	return nil
 }
@@ -141,7 +135,7 @@ func runLegacyMode(sshConfig *ssh.Config) error {
 	defer stop()
 
 	logger := log.NewLogfmtLogger(os.Stdout)
-	sshClient := ssh.NewClient(sshConfig, logger, ssh.NewNopKeyManager())
+	sshClient := ssh.NewClient(sshConfig, logger, nil)
 	// Start the ssh client
 	err := services.StartAndAwaitRunning(ctx, sshClient)
 	if err != nil {
