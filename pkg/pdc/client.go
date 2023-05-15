@@ -100,7 +100,7 @@ func (sr *SigningResponse) UnmarshalJSON(data []byte) error {
 // NewClient returns a new Client
 func NewClient(cfg *Config, logger log.Logger) (Client, error) {
 	if cfg.URL == nil {
-		return nil, errors.New("api.url cannot be nil")
+		return nil, errors.New("-api-url cannot be nil")
 	}
 
 	return &pdcClient{
