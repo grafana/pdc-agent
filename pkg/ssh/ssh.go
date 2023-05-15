@@ -110,7 +110,7 @@ func (s *Client) starting(ctx context.Context) error {
 				return
 			}
 
-			level.Debug(s.logger).Log("msg", fmt.Sprintf("parsed flags: %v", flags))
+			level.Debug(s.logger).Log("msg", fmt.Sprintf("parsed flags: %s", flags))
 			cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr

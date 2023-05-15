@@ -58,13 +58,13 @@ func main() {
 		return
 	}
 
+	sshConfig.PDC = *pdcClientCfg
+
 	err = run(logger, sshConfig, pdcClientCfg)
 	if err != nil {
 		level.Error(logger).Log("err", err)
 		os.Exit(1)
 	}
-
-	sshConfig.PDC = *pdcClientCfg
 
 }
 
