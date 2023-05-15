@@ -236,19 +236,6 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			wantSigningRequest: true,
 			assertFn:           assertExpectedFiles,
 		},
-		{
-			name: "forceKeyFileOverwrite is true: expect signing request",
-			setupFn: func(t *testing.T, cfg *ssh.Config) {
-				t.Helper()
-				privKey, pubKey, cert, kh := generateKeys("", "")
-				_ = os.WriteFile(cfg.KeyFile, privKey, 0600)
-				_ = os.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
-				_ = os.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
-				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), kh, 0644)
-				cfg.ForceKeyFileOverwrite = true
-			},
-			wantSigningRequest: true,
-		},
 	}
 
 	for _, tc := range testcases {

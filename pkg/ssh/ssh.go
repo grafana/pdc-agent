@@ -22,21 +22,13 @@ import (
 type Config struct {
 	Args []string // deprecated
 
-	KeyFile               string
-	SSHFlags              []string // Additional flags to be passed to ssh(1). e.g. --ssh-flag="-vvv" --ssh-flag="-L 80:localhost:80"
-	ForceKeyFileOverwrite bool
-	Port                  int
-	PDC                   pdc.Config
-	LegacyMode            bool
-	URL                   *url.URL
+	KeyFile    string
+	SSHFlags   []string // Additional flags to be passed to ssh(1). e.g. --ssh-flag="-vvv" --ssh-flag="-L 80:localhost:80"
+	Port       int
+	PDC        pdc.Config
+	LegacyMode bool
+	URL        *url.URL
 }
-
-const forceKeyFileOverwriteUsage = `If enabled, the pdc-agent will regenerate an SSH key pair and request a new
-certificate to use whem establishing an SSH tunnel.
-
-If disabled, pdc-agent will use existing SSH keys and only request a new SSH
-certificate when the existing one is expired. If no SHH keys exist, it will
-generate a pair and request a certificate.`
 
 // DefaultConfig returns a Config with some sensible defaults set
 func DefaultConfig() *Config {
@@ -57,7 +49,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 	cfg.SSHFlags = []string{}
 	f.StringVar(&cfg.KeyFile, "ssh-key-file", def.KeyFile, "The path to the SSH key file.")
-	f.BoolVar(&cfg.ForceKeyFileOverwrite, "force-key-file-overwrite", false, forceKeyFileOverwriteUsage)
 	f.Func("ssh-url", "url of the PDC SSH gateway", cfg.parseGatewayURL)
 	f.Func("ssh-flag", "Additional flags to be passed to ssh. Can be set more than once.", cfg.addSSHFlag)
 
