@@ -33,9 +33,7 @@ func main() {
 
 	sshConfig.Args = os.Args[1:]
 
-	legacyMode := inLegacyMode()
-
-	if legacyMode {
+	if inLegacyMode() {
 		sshConfig.LegacyMode = true
 		err := runLegacyMode(sshConfig)
 		if err != nil {
