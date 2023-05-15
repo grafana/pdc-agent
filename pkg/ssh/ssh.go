@@ -32,7 +32,7 @@ type Config struct {
 }
 
 const forceKeyFileOverwriteUsage = `If enabled, the pdc-agent will regenerate an SSH key pair and request a new
-certificate to use whem establishing an SSH tunnel.
+certificate to use when establishing an SSH tunnel.
 
 If disabled, pdc-agent will use existing SSH keys and only request a new SSH
 certificate when the existing one is expired. If no SHH keys exist, it will
