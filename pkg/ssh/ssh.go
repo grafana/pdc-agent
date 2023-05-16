@@ -34,7 +34,7 @@ type Config struct {
 func DefaultConfig() *Config {
 	root, err := os.UserHomeDir()
 	if err != nil {
-		// ??? Maybe lets use the current dir?
+		// Use relative path (should not happen)
 		root = ""
 	}
 	return &Config{
