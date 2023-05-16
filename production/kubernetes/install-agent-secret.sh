@@ -30,4 +30,4 @@ OUTFILE=${OUTFILE:-secret.yaml}
 export NAMESPACE
 export TOKEN
 
-curl -fsSLv "$MANIFEST_URL" | envsubst > "$OUTFILE"
+curl -fsSL "$MANIFEST_URL" | envsubst > "$OUTFILE"

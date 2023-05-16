@@ -26,7 +26,7 @@ kubectl create -f secret.yaml
 
 ```
 kubectl create secret generic -n ${NAMESPACE} grafana-pdc-agent \
-  --from-file=token=./token
+  --from-literal="token=${GCLOUD_PDC_SIGNING_TOKEN}"
 ```
 
 ### 2. Installing the agent
