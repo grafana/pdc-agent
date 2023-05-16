@@ -5,7 +5,6 @@ metadata:
     app: grafana-pdc-agent
     name: grafana-pdc-agent
   name: grafana-pdc-agent
-  namespace: ${NAMESPACE}
 spec:
   replicas: 1
   selector:
@@ -29,13 +28,23 @@ spec:
             secretKeyRef:
               key: token
               name: grafana-pdc-agent
+        - name: CLUSTER
+          valueFrom:
+            secretKeyRef:
+              key: cluster
+              name: grafana-pdc-agent
+        - name: HOSTED_GRAFANA_ID
+          valueFrom:
+            secretKeyRef:
+              key: hosted-grafana-id
+              name: grafana-pdc-agent
         args:
         - -cluster
-        - ${GCLOUD_PDC_CLUSTER}
+        - $(CLUSTER)
         - -token
         - $(TOKEN)
         - -gcloud-hosted-grafana-id
-        - "${GCLOUD_HOSTED_GRAFANA_ID}"
+        - "$(HOSTED_GRAFANA_ID)"
         image: grafana/pdc-agent:latest
         imagePullPolicy: Always
         resources:
