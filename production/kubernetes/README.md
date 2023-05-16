@@ -8,7 +8,7 @@ It contains two manifests: `agent-bare.yaml`, which describes te agent Deploymen
 
 ### 1. Installing the Secret
 
-To install the Secret, you will need to have received a signed **SSH Certificate** and a **known_hosts** file from Grafana.
+To install the Secret, you will need to have a **Grafana API token**, which you can generate from the **Private data source connections** page in your Grafana Cloud instance.
 
 **Option 1:** use the script
 
@@ -26,9 +26,7 @@ kubectl create -f secret.yaml
 
 ```
 kubectl create secret generic -n ${NAMESPACE} grafana-pdc-agent \
-  --from-file=key=./key \
-  --from-file=known_hosts=./known_hosts \
-  --from-file=cert.pub=./cert.pub
+  --from-file=token=./token
 ```
 
 ### 2. Installing the agent

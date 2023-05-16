@@ -18,22 +18,16 @@ check_file_exists() {
 check_installed curl
 check_installed envsubst
 
-check_file_exists known_hosts
-check_file_exists cert.pub
-check_file_exists key
+check_file_exists token
 
-KEY=$(base64 < key)
-KNOWN_HOSTS=$(base64 < known_hosts)
-CERT_PUB=$(base64 < cert.pub)
+TOKEN=$(base64 < token)
 
 MANIFEST_BRANCH=${MANIFEST_BRANCH:-main}
-MANIFEST_URL=${MANIFEST_URL:-https://raw.githubusercontent.com/grafana/pdc-agent/${MANIFEST_BRANCH}/production/kubernetes/agent-secret.yaml}
+MANIFEST_URL=${MANIFEST_URL:-https://raw.githubusercontent.com/grafana/pdc-agent/${MANIFEST_BRANCH}/production/kubernetes/agent-secret-bare.yaml}
 NAMESPACE=${NAMESPACE:-default}
 OUTFILE=${OUTFILE:-secret.yaml}
 
 export NAMESPACE
-export KEY
-export KNOWN_HOSTS
-export CERT_PUB
+export TOKEN
 
-curl -fsSL "$MANIFEST_URL" | envsubst > "$OUTFILE"
+curl -fsSLv "$MANIFEST_URL" | envsubst > "$OUTFILE"

@@ -1,5 +1,3 @@
 deployment.yaml
 secret.yaml
-cert.pub
-key
-known_hosts
+token
