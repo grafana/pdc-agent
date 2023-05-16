@@ -5,7 +5,6 @@ metadata:
     app: grafana-pdc-agent
     name: grafana-pdc-agent
   name: grafana-pdc-agent
-  namespace: ${NAMESPACE}
 spec:
   replicas: 1
   selector:
@@ -22,26 +21,32 @@ spec:
         name: grafana-pdc-agent
     spec:
       containers:
-      - args:
-        - -i
-        - /var/run/secrets/grafana-pdc-agent/key
-        - ${SLUG}@${PDC_GATEWAY}
-        - -p
-        - "22"
-        - -o
-        - BatchMode=yes
-        - -o
-        - UserKnownHostsFile=/var/run/secrets/grafana-pdc-agent/known_hosts
-        - -o
-        - CertificateFile=/var/run/secrets/grafana-pdc-agent/cert.pub
-        - -o
-        - ServerAliveInterval=15
-        - -R
-        - "0"
-        - -vvv
+      - name: grafana-pdc-agent
+        env:
+        - name: TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: token
+              name: grafana-pdc-agent
+        - name: CLUSTER
+          valueFrom:
+            secretKeyRef:
+              key: cluster
+              name: grafana-pdc-agent
+        - name: HOSTED_GRAFANA_ID
+          valueFrom:
+            secretKeyRef:
+              key: hosted-grafana-id
+              name: grafana-pdc-agent
+        args:
+        - -cluster
+        - $(CLUSTER)
+        - -token
+        - $(TOKEN)
+        - -gcloud-hosted-grafana-id
+        - "$(HOSTED_GRAFANA_ID)"
         image: grafana/pdc-agent:latest
         imagePullPolicy: Always
-        name: grafana-pdc-agent
         resources:
           limits:
             memory: 1Gi
@@ -55,16 +60,7 @@ spec:
           capabilities:
             drop:
               - all
-        volumeMounts:
-        - mountPath: /var/run/secrets/grafana-pdc-agent
-          name: grafana-pdc-agent
-          readOnly: true
       securityContext:
         runAsUser: 30000
         runAsGroup: 30000
         fsGroup: 30000
-      volumes:
-      - name: grafana-pdc-agent
-        secret:
-          defaultMode: 0400
-          secretName: grafana-pdc-agent

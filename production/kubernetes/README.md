@@ -8,39 +8,21 @@ It contains two manifests: `agent-bare.yaml`, which describes te agent Deploymen
 
 ### 1. Installing the Secret
 
-To install the Secret, you will need to have received a signed **SSH Certificate** and a **known_hosts** file from Grafana.
+To install the Secret, you will need to get the required environment variables and a Grafana API token, which you can get from the **Private data source connections** page in your Grafana Cloud instance.
 
-**Option 1:** use the script
-
-```
-[NAMESPACE=namespace] install-agent-secret.sh
-``` 
-
-from within this directory. This will create a manifest file. Then you will need to create the secret using the manifest: 
-
-```
-kubectl create -f secret.yaml
-```
-
-**Option 2:** create with the kubectl helper:
+Create a secret with the kubectl helper:
 
 ```
 kubectl create secret generic -n ${NAMESPACE} grafana-pdc-agent \
-  --from-file=key=./key \
-  --from-file=known_hosts=./known_hosts \
-  --from-file=cert.pub=./cert.pub
+  --from-literal="token=${GCLOUD_PDC_SIGNING_TOKEN}" \
+  --from-literal="hosted-grafana-id=${GCLOUD_HOSTED_GRAFANA_ID}" \
+  --from-literal="cluster=${GCLOUD_PDC_CLUSTER}"
 ```
 
 ### 2. Installing the agent
 
-Run the `install-agent.sh` script, with some required environment variables. Get the correct PDC_GATEWAY value from the Grafana team:
+Create a pdc-agent deployment with:
 
 ```
-SLUG=slug PDC_GATEWAY=private-datasource-connect-<cluster>.grafana.net ./install-agent.sh
-```
-
-This will create a manifest. Apply the manifest with
-
-```
-kubectl create -f deployment.yaml
+kubectl apply -n ${NAMESPACE} -f https://raw.githubusercontent.com/grafana/pdc-agent/main/production/kubernetes/pdc-agent-deployment.yaml
 ```
