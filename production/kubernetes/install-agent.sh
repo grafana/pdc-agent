@@ -12,13 +12,13 @@ check_installed() {
 check_installed curl
 check_installed envsubst
 
-if [[ -z "$SLUG" ]] ; then
-  echo "error: SLUG is not defined" >&2
+if [[ -z "$GCLOUD_HOSTED_GRAFANA_ID" ]] ; then
+  echo "error: GCLOUD_HOSTED_GRAFANA_ID is not defined" >&2
   exit 1
 fi
 
-if [[ -z "$PDC_GATEWAY" ]] ; then
-  echo "error: PDC_GATEWAY is not defined" >&2
+if [[ -z "$GCLOUD_PDC_CLUSTER" ]] ; then
+  echo "error: GCLOUD_PDC_CLUSTER is not defined" >&2
   exit 1
 fi
 
@@ -29,7 +29,7 @@ OUTFILE=${OUTFILE:-deployment.yaml}
 
 
 export NAMESPACE
-export SLUG
-export PDC_GATEWAY
+export GCLOUD_HOSTED_GRAFANA_ID
+export GCLOUD_PDC_CLUSTER
 
 curl -fsSL "$MANIFEST_URL" | envsubst > "$OUTFILE"
