@@ -2,7 +2,9 @@ name: goreleaser
 
 on:
   push:
-    # run only against tags
+    # run only against tags on main
+    branches:
+      - main
     tags:
       - "v*"
 permissions:
@@ -41,6 +43,6 @@ jobs:
         with:
           distribution: goreleaser
           version: latest
-          args: release --rm-dist --debug
+          args: release --clean --debug
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
