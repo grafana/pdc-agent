@@ -5,8 +5,8 @@ before:
     - go mod tidy
 builds:
   - id: pdc
-    # env:
-    #   - CGO_ENABLED=0
+    env:
+      - CGO_ENABLED=0
     main: ./cmd/pdc
     binary: pdc
     goos:
