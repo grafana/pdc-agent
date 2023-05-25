@@ -151,6 +151,7 @@ func (s *Client) SSHFlagsFromConfig() ([]string, error) {
 		"-vv",
 		"-o", fmt.Sprintf("UserKnownHostsFile=%s/%s", keyFileDir, KnownHostsFile),
 		"-o", fmt.Sprintf("CertificateFile=%s-cert.pub", s.cfg.KeyFile),
+		"-o", "ServerAliveInterval=15",
 	}
 
 	for _, f := range s.cfg.SSHFlags {
