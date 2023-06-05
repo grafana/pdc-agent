@@ -26,13 +26,6 @@ linters-settings:
     replace-allow-list:
       # see https://github.com/dolthub/go-mysql-server/issues/1591
       - github.com/dolthub/go-mysql-server
-  depguard:
-    packages:
-      - github.com/pkg/errors
-      - gopkg.in/square/go-jose.v2
-    packages-with-error-message:
-      - github.com/pkg/errors: 'use `fmt.Errorf` instead, or the stdlib `errors` package'
-      - gopkg.in/square/go-jose.v2: 'use `github.com/go-jose/go-jose/v3` instead'
 
 linters:
   disable-all: true
