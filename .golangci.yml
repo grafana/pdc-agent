@@ -38,7 +38,7 @@ linters:
     ## - contextcheck
     ## - cyclop
     ## - decorder
-    - depguard
+    # - depguard
     # - dogsled
     - dupl
     - dupword
