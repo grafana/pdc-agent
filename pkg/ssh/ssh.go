@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"os/exec"
@@ -23,13 +24,14 @@ import (
 type Config struct {
 	Args []string // deprecated
 
-	KeyFile     string
-	SSHFlags    []string // Additional flags to be passed to ssh(1). e.g. --ssh-flag="-vvv" --ssh-flag="-L 80:localhost:80"
-	Port        int
-	PDC         pdc.Config
-	LegacyMode  bool
-	URL         *url.URL
-	ExitOnError bool
+	KeyFile    string
+	SSHFlags   []string // Additional flags to be passed to ssh(1). e.g. --ssh-flag="-vvv" --ssh-flag="-L 80:localhost:80"
+	Port       int
+	PDC        pdc.Config
+	LegacyMode bool
+	URL        *url.URL
+	CmdStdout  io.Writer
+	CmdStderr  io.Writer
 }
 
 // DefaultConfig returns a Config with some sensible defaults set
@@ -51,7 +53,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 	cfg.SSHFlags = []string{}
 	f.StringVar(&cfg.KeyFile, "ssh-key-file", def.KeyFile, "The path to the SSH key file.")
-	f.BoolVar(&cfg.ExitOnError, "exit-on-error", false, "Exit if the agent encounters an error whilst running the ssh command, instead of retrying")
 	f.Func("ssh-flag", "Additional flags to be passed to ssh. Can be set more than once.", cfg.addSSHFlag)
 }
 
@@ -76,6 +77,15 @@ type Client struct {
 
 // NewClient returns a new SSH client in an idle state
 func NewClient(cfg *Config, logger log.Logger, km *KeyManager) *Client {
+
+	if cfg.CmdStdout == nil {
+		cfg.CmdStdout = os.Stdout
+	}
+
+	if cfg.CmdStderr == nil {
+		cfg.CmdStderr = os.Stderr
+	}
+
 	client := &Client{
 		cfg:    cfg,
 		SSHCmd: "ssh",
@@ -111,16 +121,12 @@ func (s *Client) starting(ctx context.Context) error {
 
 			level.Debug(s.logger).Log("msg", fmt.Sprintf("parsed flags: %s", flags))
 			cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
+
+			cmd.Stdout = s.cfg.CmdStdout
+			cmd.Stderr = s.cfg.CmdStderr
 			err = cmd.Run()
 			if ctx.Err() != nil {
 				break // context was canceled
-			}
-
-			if s.cfg.ExitOnError && err != nil {
-				level.Error(s.logger).Log("msg", "ssh client errored. exiting", "error", err)
-				return err
 			}
 
 			level.Error(s.logger).Log("msg", "ssh client exited. restarting")
