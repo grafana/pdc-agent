@@ -51,7 +51,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 	cfg.SSHFlags = []string{}
 	f.StringVar(&cfg.KeyFile, "ssh-key-file", def.KeyFile, "The path to the SSH key file.")
-	f.BoolVar(&cfg.ExitOnError, "exit-on-error", false, "Exit if the agent encounters an error whilst, instead of retrying")
+	f.BoolVar(&cfg.ExitOnError, "exit-on-error", false, "Exit if the agent encounters an error whilst running the ssh command, instead of retrying")
 	f.Func("ssh-flag", "Additional flags to be passed to ssh. Can be set more than once.", cfg.addSSHFlag)
 }
 
@@ -113,9 +113,14 @@ func (s *Client) starting(ctx context.Context) error {
 			cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
-			_ = cmd.Run()
+			err = cmd.Run()
 			if ctx.Err() != nil {
 				break // context was canceled
+			}
+
+			if s.cfg.ExitOnError && err != nil {
+				level.Error(s.logger).Log("msg", "ssh client errored. exiting", "error", err)
+				return err
 			}
 
 			level.Error(s.logger).Log("msg", "ssh client exited. restarting")
