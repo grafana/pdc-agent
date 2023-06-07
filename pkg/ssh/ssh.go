@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/pdc-agent/pkg/pdc"
@@ -22,12 +23,13 @@ import (
 type Config struct {
 	Args []string // deprecated
 
-	KeyFile    string
-	SSHFlags   []string // Additional flags to be passed to ssh(1). e.g. --ssh-flag="-vvv" --ssh-flag="-L 80:localhost:80"
-	Port       int
-	PDC        pdc.Config
-	LegacyMode bool
-	URL        *url.URL
+	KeyFile     string
+	SSHFlags    []string // Additional flags to be passed to ssh(1). e.g. --ssh-flag="-vvv" --ssh-flag="-L 80:localhost:80"
+	Port        int
+	PDC         pdc.Config
+	LegacyMode  bool
+	URL         *url.URL
+	ExitOnError bool
 }
 
 // DefaultConfig returns a Config with some sensible defaults set
@@ -49,6 +51,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 	cfg.SSHFlags = []string{}
 	f.StringVar(&cfg.KeyFile, "ssh-key-file", def.KeyFile, "The path to the SSH key file.")
+	f.BoolVar(&cfg.ExitOnError, "exit-on-error", false, "Exit if the agent encounters an error whilst, instead of retrying")
 	f.Func("ssh-flag", "Additional flags to be passed to ssh. Can be set more than once.", cfg.addSSHFlag)
 }
 
@@ -86,21 +89,24 @@ func NewClient(cfg *Config, logger log.Logger, km *KeyManager) *Client {
 
 func (s *Client) starting(ctx context.Context) error {
 	level.Info(s.logger).Log("msg", "starting ssh client")
-	go func() {
+	g, ctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
 		for {
 			// check keys and cert validity before (re)start, create new cert if required
+			// This will exit if it fails, rather than endlessly retrying to sign keys.
 			if s.km != nil {
 				err := s.km.CreateKeys(ctx)
 				if err != nil {
 					level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", err)
-					break
+					return err
 				}
 			}
 
 			flags, err := s.SSHFlagsFromConfig()
 			if err != nil {
 				level.Error(s.logger).Log("msg", fmt.Sprintf("could not parse flags: %s", err))
-				return
+				return err
 			}
 
 			level.Debug(s.logger).Log("msg", fmt.Sprintf("parsed flags: %s", flags))
@@ -118,7 +124,12 @@ func (s *Client) starting(ctx context.Context) error {
 			time.Sleep(1 * time.Second)
 
 		}
-	}()
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
+		return err
+	}
 	return nil
 }
 
