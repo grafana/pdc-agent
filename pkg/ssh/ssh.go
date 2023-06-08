@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"os/exec"
@@ -30,8 +29,6 @@ type Config struct {
 	PDC        pdc.Config
 	LegacyMode bool
 	URL        *url.URL
-	CmdStdout  io.Writer
-	CmdStderr  io.Writer
 }
 
 // DefaultConfig returns a Config with some sensible defaults set
@@ -77,15 +74,6 @@ type Client struct {
 
 // NewClient returns a new SSH client in an idle state
 func NewClient(cfg *Config, logger log.Logger, km *KeyManager) *Client {
-
-	if cfg.CmdStdout == nil {
-		cfg.CmdStdout = os.Stdout
-	}
-
-	if cfg.CmdStderr == nil {
-		cfg.CmdStderr = os.Stderr
-	}
-
 	client := &Client{
 		cfg:    cfg,
 		SSHCmd: "ssh",
@@ -122,8 +110,8 @@ func (s *Client) starting(ctx context.Context) error {
 			level.Debug(s.logger).Log("msg", fmt.Sprintf("parsed flags: %s", flags))
 			cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
 
-			cmd.Stdout = s.cfg.CmdStdout
-			cmd.Stderr = s.cfg.CmdStderr
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
 			err = cmd.Run()
 			if ctx.Err() != nil {
 				break // context was canceled
