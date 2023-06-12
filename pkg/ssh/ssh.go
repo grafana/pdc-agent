@@ -13,7 +13,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/pdc-agent/pkg/pdc"
@@ -87,32 +86,33 @@ func NewClient(cfg *Config, logger log.Logger, km *KeyManager) *Client {
 
 func (s *Client) starting(ctx context.Context) error {
 	level.Info(s.logger).Log("msg", "starting ssh client")
-	g, ctx := errgroup.WithContext(ctx)
 
-	g.Go(func() error {
+	// check keys and cert validity before start, create new cert if required
+	// This will exit if it fails, rather than endlessly retrying to sign keys.
+	if s.km != nil {
+		err := s.km.CreateKeys(ctx)
+		if err != nil {
+			level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", err)
+			return err
+		}
+	}
+
+	// Attempt to parse SSH flags before triggering the goroutine, so we can exit
+	// if the parsing fails
+	flags, err := s.SSHFlagsFromConfig()
+	if err != nil {
+		level.Error(s.logger).Log("msg", fmt.Sprintf("could not parse flags: %s", err))
+		return err
+	}
+
+	go func() {
 		for {
-			// check keys and cert validity before (re)start, create new cert if required
-			// This will exit if it fails, rather than endlessly retrying to sign keys.
-			if s.km != nil {
-				err := s.km.CreateKeys(ctx)
-				if err != nil {
-					level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", err)
-					return err
-				}
-			}
-
-			flags, err := s.SSHFlagsFromConfig()
-			if err != nil {
-				level.Error(s.logger).Log("msg", fmt.Sprintf("could not parse flags: %s", err))
-				return err
-			}
-
 			level.Debug(s.logger).Log("msg", fmt.Sprintf("parsed flags: %s", flags))
 			cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
 
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
-			err = cmd.Run()
+			_ = cmd.Run()
 			if ctx.Err() != nil {
 				break // context was canceled
 			}
@@ -122,13 +122,20 @@ func (s *Client) starting(ctx context.Context) error {
 			// TODO: Implement exponential backoff
 			time.Sleep(1 * time.Second)
 
-		}
-		return nil
-	})
+			// check keys and cert validity before restart, create new cert if required.
+			// This covers the case where a certificate has become invalid since the last start.
+			// return on error here, because there's no point retrying if we cannot get a new cert.
+			if s.km != nil {
+				err := s.km.CreateKeys(ctx)
+				if err != nil {
+					level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", err)
+					return
+				}
+			}
 
-	if err := g.Wait(); err != nil {
-		return err
-	}
+		}
+	}()
+
 	return nil
 }
 
