@@ -122,14 +122,15 @@ func (s *Client) starting(ctx context.Context) error {
 			// TODO: Implement exponential backoff
 			time.Sleep(1 * time.Second)
 
-			// check keys and cert validity before restart, create new cert if required.
+			// Check keys and cert validity before restart, create new cert if required.
 			// This covers the case where a certificate has become invalid since the last start.
-			// return on error here, because there's no point retrying if we cannot get a new cert.
+			// Do not return here: we want to keep trying to connect in case the PDC API
+			// is temporarily unavailable.
 			if s.km != nil {
 				err := s.km.CreateKeys(ctx)
 				if err != nil {
 					level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", err)
-					return
+					break
 				}
 			}
 
