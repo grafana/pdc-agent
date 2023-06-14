@@ -102,8 +102,8 @@ func (s *Client) starting(ctx context.Context) error {
 				level.Error(s.logger).Log("msg", fmt.Sprintf("could not parse flags: %s", err))
 				return
 			}
-
 			level.Debug(s.logger).Log("msg", fmt.Sprintf("parsed flags: %s", flags))
+
 			cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
@@ -155,9 +155,9 @@ func (s *Client) SSHFlagsFromConfig() ([]string, error) {
 	}
 
 	for _, f := range s.cfg.SSHFlags {
-		// flags are in the format '-vv' or '-o Option=Value'. Split to flatten strings
-		// in the second format
-		result = append(result, strings.Split(f, " ")...)
+		// flags are in the format '-vv' or '-o Option=Value'. Split once to flatten strings
+		// in the second format whilst accommodating -o Option='value with whitespace'
+		result = append(result, strings.SplitN(f, " ", 1)...)
 	}
 
 	return result, nil
