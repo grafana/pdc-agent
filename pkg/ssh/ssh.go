@@ -25,6 +25,7 @@ type Config struct {
 	KeyFile    string
 	SSHFlags   []string // Additional flags to be passed to ssh(1). e.g. --ssh-flag="-vvv" --ssh-flag="-L 80:localhost:80"
 	Port       int
+	LogLevel   int
 	PDC        pdc.Config
 	LegacyMode bool
 	URL        *url.URL
@@ -38,9 +39,10 @@ func DefaultConfig() *Config {
 		root = ""
 	}
 	return &Config{
-		Port:    22,
-		PDC:     pdc.Config{},
-		KeyFile: path.Join(root, ".ssh/grafana_pdc"),
+		Port:     22,
+		LogLevel: 2,
+		PDC:      pdc.Config{},
+		KeyFile:  path.Join(root, ".ssh/grafana_pdc"),
 	}
 }
 
@@ -49,6 +51,11 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 	cfg.SSHFlags = []string{}
 	f.StringVar(&cfg.KeyFile, "ssh-key-file", def.KeyFile, "The path to the SSH key file.")
+	f.IntVar(&cfg.LogLevel, "log-level", def.LogLevel, "The level of log verbosity. The maximum is 3.")
+	// use default log level if invalid
+	if cfg.LogLevel > 3 {
+		cfg.LogLevel = def.LogLevel
+	}
 	f.Func("ssh-flag", "Additional flags to be passed to ssh. Can be set more than once.", cfg.addSSHFlag)
 }
 
@@ -140,6 +147,11 @@ func (s *Client) SSHFlagsFromConfig() ([]string, error) {
 	keyFileArr := strings.Split(s.cfg.KeyFile, "/")
 	keyFileDir := strings.Join(keyFileArr[:len(keyFileArr)-1], "/")
 
+	logLevelFlag := ""
+	if s.cfg.LogLevel > 0 {
+		logLevelFlag = "-" + strings.Repeat("v", s.cfg.LogLevel)
+	}
+
 	gwURL := s.cfg.URL
 	result := []string{
 		"-i",
@@ -148,7 +160,7 @@ func (s *Client) SSHFlagsFromConfig() ([]string, error) {
 		"-p",
 		fmt.Sprintf("%d", s.cfg.Port),
 		"-R", "0",
-		"-vv",
+		logLevelFlag,
 		"-o", fmt.Sprintf("UserKnownHostsFile=%s/%s", keyFileDir, KnownHostsFile),
 		"-o", fmt.Sprintf("CertificateFile=%s-cert.pub", s.cfg.KeyFile),
 		"-o", "ServerAliveInterval=15",

@@ -154,4 +154,31 @@ func TestClient_SSHArgs(t *testing.T) {
 		assert.Equal(t, expected, result)
 
 	})
+
+	t.Run("allow updating the log verbosity", func(t *testing.T) {
+		cfg := ssh.DefaultConfig()
+		cfg.LogLevel = 0
+
+		sshClient := newTestClient(t, cfg)
+		result, err := sshClient.SSHFlagsFromConfig()
+
+		assert.Nil(t, err)
+		expected := []string{
+			"-i",
+			cfg.KeyFile,
+			"@localhost",
+			"-p",
+			"22",
+			"-R",
+			"0",
+			"",
+			"-o",
+			fmt.Sprintf("UserKnownHostsFile=%s", path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile)),
+			"-o",
+			fmt.Sprintf("CertificateFile=%s", cfg.KeyFile+"-cert.pub"),
+			"-o",
+			"ServerAliveInterval=15",
+		}
+		assert.Equal(t, expected, result)
+	})
 }
