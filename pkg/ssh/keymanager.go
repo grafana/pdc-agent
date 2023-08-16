@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -56,7 +57,21 @@ func (km *KeyManager) CreateKeys(ctx context.Context) error {
 		return err
 	}
 
-	return km.ensureCertExists(ctx, newCertRequired)
+	argumentHash := km.argumentsHash()
+	if km.argumentsHashIsDifferent(argumentHash) {
+		level.Info(km.logger).Log("msg", fmt.Sprintf("fetching new certificate: agent arguments changed hash=%s", argumentHash))
+		newCertRequired = true
+	}
+
+	if err := km.ensureCertExists(ctx, newCertRequired); err != nil {
+		return fmt.Errorf("ensuring certificate exists: %w", err)
+	}
+
+	if err := km.writeHashFile([]byte(argumentHash)); err != nil {
+		return fmt.Errorf("writing to hash file: %w", err)
+	}
+
+	return nil
 }
 
 // EnsureCertExists checks for the existence of a valid SSH certificate and
@@ -73,7 +88,6 @@ func (km KeyManager) ensureCertExists(ctx context.Context, forceCreate bool) err
 	}
 
 	newCertRequired = km.newCertRequired()
-
 	if !newCertRequired {
 		return nil
 	}
@@ -179,6 +193,26 @@ func (km KeyManager) newCertRequired() bool {
 	return false
 }
 
+// argumentsHashIsDifferent returns true when specific arguments
+// passed to the pdc agent are different from the previous arguments.
+func (km KeyManager) argumentsHashIsDifferent(hash string) bool {
+	bytes, err := km.readHashFile()
+	if errors.Is(err, os.ErrNotExist) {
+		// No hash stored yet, let's get a new certificate and store the hash.
+		return true
+	}
+
+	contents := string(bytes)
+
+	return contents != hash
+}
+
+// argumentsHash returns a hash of the values that end up in the principals field of the certificate.
+func (km KeyManager) argumentsHash() string {
+	value := fmt.Sprintf("%s/%s", km.cfg.PDC.HostedGrafanaID, km.cfg.PDC.Network)
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(value)))
+}
+
 func (km KeyManager) generateKeyPair() error {
 
 	// Generate a new private/public keypair for OpenSSH
@@ -244,6 +278,11 @@ func (km KeyManager) readCertFile() ([]byte, error) {
 	return os.ReadFile(path)
 }
 
+func (km KeyManager) readHashFile() ([]byte, error) {
+	path := km.cfg.KeyFile + "_hash"
+	return os.ReadFile(path)
+}
+
 func (km KeyManager) writeKeyFile(data []byte) error {
 	return os.WriteFile(km.cfg.KeyFile, data, 0600)
 }
@@ -260,5 +299,10 @@ func (km KeyManager) writeKnownHostsFile(data []byte) error {
 
 func (km KeyManager) writeCertFile(data []byte) error {
 	path := path.Join(km.cfg.KeyFile + "-cert.pub")
+	return os.WriteFile(path, data, 0600)
+}
+
+func (km KeyManager) writeHashFile(data []byte) error {
+	path := path.Join(km.cfg.KeyFile + "_hash")
 	return os.WriteFile(path, data, 0600)
 }
