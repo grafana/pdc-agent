@@ -39,7 +39,7 @@ type Config struct {
 func (cfg *Config) RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&cfg.Token, "token", "", "The token to use to authenticate with Grafana Cloud. It must have the pdc-signing:write scope")
 	fs.StringVar(&cfg.HostedGrafanaID, "gcloud-hosted-grafana-id", "", "The ID of the Hosted Grafana instance to connect to")
-	fs.StringVar(&cfg.Network, "network", "", "The ID of the PDC network to connect to")
+	fs.StringVar(&cfg.Network, "network", "", "The name of the PDC network to connect to")
 }
 
 // Client is a PDC API client
