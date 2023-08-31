@@ -171,7 +171,6 @@ func TestClient_SSHArgs(t *testing.T) {
 			"22",
 			"-R",
 			"0",
-			"",
 			"-o",
 			fmt.Sprintf("UserKnownHostsFile=%s", path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile)),
 			"-o",
@@ -180,5 +179,30 @@ func TestClient_SSHArgs(t *testing.T) {
 			"ServerAliveInterval=15",
 		}
 		assert.Equal(t, expected, result)
+
+		cfg.LogLevel = 2
+
+		sshClient = newTestClient(t, cfg)
+		result, err = sshClient.SSHFlagsFromConfig()
+
+		assert.Nil(t, err)
+		expected = []string{
+			"-i",
+			cfg.KeyFile,
+			"@localhost",
+			"-p",
+			"22",
+			"-R",
+			"0",
+			"-o",
+			fmt.Sprintf("UserKnownHostsFile=%s", path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile)),
+			"-o",
+			fmt.Sprintf("CertificateFile=%s", cfg.KeyFile+"-cert.pub"),
+			"-o",
+			"ServerAliveInterval=15",
+			"-vv",
+		}
+		assert.Equal(t, expected, result)
+
 	})
 }
