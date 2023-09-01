@@ -164,10 +164,13 @@ func (s *Client) SSHFlagsFromConfig() ([]string, error) {
 		"-p",
 		fmt.Sprintf("%d", s.cfg.Port),
 		"-R", "0",
-		logLevelFlag,
 		"-o", fmt.Sprintf("UserKnownHostsFile=%s/%s", keyFileDir, KnownHostsFile),
 		"-o", fmt.Sprintf("CertificateFile=%s-cert.pub", s.cfg.KeyFile),
 		"-o", "ServerAliveInterval=15",
+	}
+
+	if logLevelFlag != "" {
+		result = append(result, logLevelFlag)
 	}
 
 	for _, f := range s.cfg.SSHFlags {
