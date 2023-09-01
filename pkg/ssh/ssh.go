@@ -138,7 +138,6 @@ func (s *Client) stopping(err error) error {
 // It does not stop default flags from being overidden, but only the first instance
 // of `-o` flags are used.
 func (s *Client) SSHFlagsFromConfig() ([]string, error) {
-
 	if s.cfg.LegacyMode {
 		level.Warn(s.logger).Log("msg", "running in legacy mode")
 		return s.cfg.Args, nil
@@ -153,10 +152,15 @@ func (s *Client) SSHFlagsFromConfig() ([]string, error) {
 	}
 
 	gwURL := s.cfg.URL
+	user := fmt.Sprintf("%s@%s", s.cfg.PDC.HostedGrafanaID, gwURL.String())
+	if s.cfg.PDC.Network != "" {
+		user = fmt.Sprintf("%s/%s@%s", s.cfg.PDC.HostedGrafanaID, s.cfg.PDC.Network, gwURL.String())
+	}
+
 	result := []string{
 		"-i",
 		s.cfg.KeyFile,
-		fmt.Sprintf("%s@%s", s.cfg.PDC.HostedGrafanaID, gwURL.String()),
+		user,
 		"-p",
 		fmt.Sprintf("%d", s.cfg.Port),
 		"-R", "0",

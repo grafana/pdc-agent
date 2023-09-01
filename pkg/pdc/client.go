@@ -33,6 +33,7 @@ var (
 type Config struct {
 	Token           string
 	HostedGrafanaID string
+	Network         string
 	URL             *url.URL
 	RetryMax        int
 }
@@ -40,6 +41,7 @@ type Config struct {
 func (cfg *Config) RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&cfg.Token, "token", "", "The token to use to authenticate with Grafana Cloud. It must have the pdc-signing:write scope")
 	fs.StringVar(&cfg.HostedGrafanaID, "gcloud-hosted-grafana-id", "", "The ID of the Hosted Grafana instance to connect to")
+	fs.StringVar(&cfg.Network, "network", "", "The name of the PDC network to connect to")
 }
 
 // Client is a PDC API client
@@ -120,6 +122,7 @@ type pdcClient struct {
 func (c *pdcClient) SignSSHKey(ctx context.Context, key []byte) (*SigningResponse, error) {
 	resp, err := c.call(ctx, http.MethodPost, "/pdc/api/v1/sign-public-key", nil, map[string]string{
 		"publicKey": string(key),
+		"network":   c.cfg.Network,
 	})
 	if err != nil {
 		return nil, err
