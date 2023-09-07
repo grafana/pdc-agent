@@ -2,6 +2,7 @@ package ssh_test
 
 import (
 	"context"
+	"encoding/pem"
 	"fmt"
 	"net/url"
 	"os"
@@ -13,8 +14,52 @@ import (
 	"github.com/grafana/pdc-agent/pkg/pdc"
 	"github.com/grafana/pdc-agent/pkg/ssh"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	gossh "golang.org/x/crypto/ssh"
 )
+
+var certPEM = `
+-----BEGIN CERTIFICATE-----
+c3NoLWVkMjU1MTktY2VydC12MDFAb3BlbnNzaC5jb20gQUFBQUlITnphQzFsWkRJ
+MU5URTVMV05sY25RdGRqQXhRRzl3Wlc1emMyZ3VZMjl0QUFBQUlESlIvSnNPT1Ev
+UWlkdGhOVWZ3aUZoM0tDSHcySXpGaHI1dVNmOWJVR1pUQUFBQUlFMS9MRHBGd0Fl
+bit6WFZNcTZuZmpBaEFtL1NpM3ZpaFJjd3ZrdG1YQUtuQUFBQUFBQUFBQUFBQUFB
+Q0FBQUFBemN3TlFBQUFINEFBQUE3Y0hKcGRtRjBaUzFrWVhSaGMyOTFjbU5sTFdO
+dmJtNWxZM1F1YUc5emRHVmtMV2R5WVdaaGJtRXVjM1pqTG1Oc2RYTjBaWEl1Ykc5
+allXd0FBQUE3Y0hKcGRtRjBaUzFrWVhSaGMyOTFjbU5sTFdOdmJtNWxZM1F0WkdW
+MkxYVnpMV05sYm5SeVlXd3RNQzVuY21GbVlXNWhMV1JsZGk1dVpYUUFBQUFBWkZP
+SExBQUFBQUJrVTVVOEFBQUFBQUFBQUFBQUFBQUFBQUFDRndBQUFBZHpjMmd0Y25O
+aEFBQUFBd0VBQVFBQUFnRUE5R0MzZUVjREpzYnFMQnVnMWMvQmVsUW5uNEdGYWxP
+KzdJV2ZwdmU2YU9oYi8xVGRnNnVMMkRjRnRYMTlINGdycU1FV1paV0lvNHZQdHV3
+UGZHQ3Rod000cWY2ZFNocUpCcC9KZDg2aENwOENTRldDZFBQNVpVWVB3RHpsNStE
+ZG9zOExYVEF1czZXSWxxcGliRmJXS05NZkNTbld5M3J3UHRKeTEvbFhwT0FKenFE
+VC80SWdhZFNDM0MyUFo2L1lpUzN2anJWazdFS0VKclc2Yk9oQzI3TGcybkZNVzgw
+WEt5L0FsVktGa0k2OFV6Rll4QzMxbTd0VzkxOWNTOS9Gc1pFQWd4ZFdJU1VUVlg4
+UW5zbHdzRUN4OUlhNmxKbU5RQ1lMU3Q1d2NaeVloOFV0T21UbDFrZjlRdGhjcXRv
+Z3UybmhXRHRsWlp5cVpRS0tYaUJaRzl5YTl2WVZYdmUzbzcvUGJqNklHbFdybkFZ
+ZVB4YSs4ZzdFNmY2aFMwQ3lmZExEb1BweFJFYTlzdGxFRjk2am00bC9zcUUwTCta
+OVRjb0FzNTI5b0xQMkFkRStzK2xiWHR1ZlJjNHh4cWJJSW04TGlVY0pEa0NYZ0V3
+MnlpK3crTFNaMUhMRGFXelVkVzVFcmgvZC9qbXV6elZyZWNaL0p3clFEem5KNFp5
+VzJXUEtpTmY1bExLYkhyR2I4aFpoUEphRFVNOTlJMkVNbmNlbDNLOFlkYjl2YTFP
+ZnB2TWI5SjNpcVlmTEs4dm4rSEJZNGE5eXhIWGcwNEZwV3VtR2pvaTBINkJkelFL
+TkpNcUNFNVBOS0RicU1NeDc4cjRGUVJtNmlGaTdvdVRJUGRsU3FCdmt6ellIaXZQ
+UFJCMGFUbWV4OHJNMFBtMXNrSnNMelpWc1Bsa0FBQUlVQUFBQURISnpZUzF6YUdF
+eUxUVXhNZ0FBQWdDRkdyUTZVNHFHSVJXZE1rYlBIRCt4NDRaNFhsR08vTUhVemxP
+SEtOM0gyRVIzWkxpWFJHazFmclhKU1Y5enhmb1lxOWY2TXdETU85QnZsMnJValRy
+bGtwdTByaWE1cjYvSVYrZ3F2OHJXMHpNSUxkeWUyZnBqRXhlT3BReFdqU0pQeVI1
+Q0NtWFFtRlkwblEwK1dNQjNiNGQ4ZHNNMGcxakc3aGhhdkk2UUdsa2MvUmpJckg1
+QVZ3Z0I3dS80a2hUZE5aS3V1OE1KTkptNWprTkhUaEo2ekNLVi80SXl0dnl1MXpv
+cGUxemdBTnF2K1NHd2lIS0FXUzh4N0podG9QMWhOTFpKSHRKOGVteHVjVitlRXZZ
+STdQcjFZVzdkc0VUamhDQkUrZUpXd0ZBamYydUJtb1JGcEU1TzhHekg0aW91eEsw
+VDJ1OTNSK09ycnNNSTlyS215bk5OcVZGcXd3VU0rUU9Sa0tIbFRoblo0K29zQ2o4
+ejdzM3RnYUh4c1FkRW1mNFFEZ0ZBWnVlejlnLzJTYSsxeUhvNklURUs5Q1ZYOVJz
+aTFTdElFKzVxWjF0alFjTUtqbDZ0OVU4RGhwdXFKaW5WQnBiN3NjYkVmRVlNcXR6
+bTdaRzZBVmlGSm9vMjRMYkJxMi9MdEFwYUFpVU51c2ZYSUt1aTZhUlRuNlhyb0NN
+WkFZRERrbkJsS0EwOC9IbHZJYko2VEZ3T2VFbzVtTjhKN3hhSUZ4Zk9PZUNQdFho
+RnVYTEQrSmlyOEhuZWZyLzVVOTJjQ0dCS1VGOURYSDhQc1RYR1QxWWNQMkpGRXZL
+QW1RbmNCaFJzZE4rblR0WjJ3T2NNaFpyTkpkbFdoWHlrNUNvcnYxTXhiZVBPTUFK
+azl0ZGNvOFFqN0pIcFR0WnFBRm12c1E9PQo=
+-----END CERTIFICATE-----
+`
 
 func mustParseURL(s string) *url.URL {
 	url, err := url.Parse(s)
@@ -26,7 +71,7 @@ func mustParseURL(s string) *url.URL {
 
 func TestStartingAndStopping(t *testing.T) {
 	// Given an SSH client
-	client := newTestClient(t, &ssh.Config{Args: []string{"-V"}})
+	client := newTestClient(t, &ssh.Config{}, true)
 
 	ctx := context.Background()
 
@@ -53,21 +98,23 @@ func TestStartingAndStopping(t *testing.T) {
 
 // testClient returns a new SSH client with a mocked command
 // see https://npf.io/2015/06/testing-exec-command/
-func newTestClient(t *testing.T, cfg *ssh.Config) *ssh.Client {
+func newTestClient(t *testing.T, cfg *ssh.Config, mockCmd bool) *ssh.Client {
 	t.Helper()
 	logger := log.NewNopLogger()
-	if len(cfg.Args) == 0 {
+	if mockCmd {
 		cfg.Args = append([]string{"-test.run=TestFakeSSHCmd", "--"}, cfg.Args...)
+		cfg.LegacyMode = true
 	}
+
 	if cfg.URL == nil {
 		cfg.URL = mustParseURL("localhost")
 	}
-	pdcCfg := pdc.Config{
-		URL: mustParseURL("test.api"),
-	}
-	pdcClient, err := pdc.NewClient(&pdcCfg, logger)
-	require.Nil(t, err)
-	km := ssh.NewKeyManager(cfg, logger, pdcClient)
+
+	dir := t.TempDir()
+	cfg.KeyFile = path.Join(dir, "test_cert")
+
+	mClient := mockPDCClient{}
+	km := ssh.NewKeyManager(cfg, logger, mClient)
 
 	client := ssh.NewClient(cfg, logger, km)
 	client.SSHCmd = os.Args[0]
@@ -91,7 +138,7 @@ func TestClient_SSHArgs(t *testing.T) {
 			HostedGrafanaID: "123",
 		}
 
-		sshClient := newTestClient(t, cfg)
+		sshClient := newTestClient(t, cfg, false)
 
 		result, err := sshClient.SSHFlagsFromConfig()
 
@@ -106,7 +153,7 @@ func TestClient_SSHArgs(t *testing.T) {
 		cfg.URL = mustParseURL("localhost")
 		cfg.Args = expectedArgs
 
-		sshClient := newTestClient(t, cfg)
+		sshClient := newTestClient(t, cfg, false)
 		result, err := sshClient.SSHFlagsFromConfig()
 
 		assert.Nil(t, err)
@@ -128,7 +175,7 @@ func TestClient_SSHArgs(t *testing.T) {
 			"-o PermitRemoteOpen=host:123 host:456",
 		}
 
-		sshClient := newTestClient(t, cfg)
+		sshClient := newTestClient(t, cfg, false)
 		result, err := sshClient.SSHFlagsFromConfig()
 
 		assert.Nil(t, err)
@@ -159,7 +206,7 @@ func TestClient_SSHArgs(t *testing.T) {
 		cfg := ssh.DefaultConfig()
 		cfg.LogLevel = 0
 
-		sshClient := newTestClient(t, cfg)
+		sshClient := newTestClient(t, cfg, false)
 		result, err := sshClient.SSHFlagsFromConfig()
 
 		assert.Nil(t, err)
@@ -182,7 +229,7 @@ func TestClient_SSHArgs(t *testing.T) {
 
 		cfg.LogLevel = 2
 
-		sshClient = newTestClient(t, cfg)
+		sshClient = newTestClient(t, cfg, false)
 		result, err = sshClient.SSHFlagsFromConfig()
 
 		assert.Nil(t, err)
@@ -205,4 +252,23 @@ func TestClient_SSHArgs(t *testing.T) {
 		assert.Equal(t, expected, result)
 
 	})
+}
+
+type mockPDCClient struct {
+}
+
+func (m mockPDCClient) SignSSHKey(_ context.Context, _ []byte) (*pdc.SigningResponse, error) {
+
+	block, _ := pem.Decode([]byte(certPEM))
+	pk, _, _, _, err := gossh.ParseAuthorizedKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse public key: %w", err)
+	}
+
+	cert, _ := pk.(*gossh.Certificate)
+
+	return &pdc.SigningResponse{
+		KnownHosts:  []byte("known hosts"),
+		Certificate: *cert,
+	}, nil
 }

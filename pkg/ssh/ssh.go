@@ -93,25 +93,30 @@ func NewClient(cfg *Config, logger log.Logger, km *KeyManager) *Client {
 
 func (s *Client) starting(ctx context.Context) error {
 	level.Info(s.logger).Log("msg", "starting ssh client")
+
+	// check keys and cert validity before start, create new cert if required
+	// This will exit if it fails, rather than endlessly retrying to sign keys.
+	if s.km != nil {
+		err := s.km.CreateKeys(ctx)
+		if err != nil {
+			level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", err)
+			return err
+		}
+	}
+
+	// Attempt to parse SSH flags before triggering the goroutine, so we can exit
+	// if the parsing fails
+	flags, err := s.SSHFlagsFromConfig()
+	if err != nil {
+		level.Error(s.logger).Log("msg", fmt.Sprintf("could not parse flags: %s", err))
+		return err
+	}
+	level.Debug(s.logger).Log("msg", fmt.Sprintf("parsed flags: %s", flags))
+
 	go func() {
 		for {
-			// check keys and cert validity before (re)start, create new cert if required
-			if s.km != nil {
-				err := s.km.CreateKeys(ctx)
-				if err != nil {
-					level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", err)
-					break
-				}
-			}
-
-			flags, err := s.SSHFlagsFromConfig()
-			if err != nil {
-				level.Error(s.logger).Log("msg", fmt.Sprintf("could not parse flags: %s", err))
-				return
-			}
-			level.Debug(s.logger).Log("msg", fmt.Sprintf("parsed flags: %s", flags))
-
 			cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
+
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			_ = cmd.Run()
@@ -124,8 +129,21 @@ func (s *Client) starting(ctx context.Context) error {
 			// TODO: Implement exponential backoff
 			time.Sleep(1 * time.Second)
 
+			// Check keys and cert validity before restart, create new cert if required.
+			// This covers the case where a certificate has become invalid since the last start.
+			// Do not return here: we want to keep trying to connect in case the PDC API
+			// is temporarily unavailable.
+			if s.km != nil {
+				err := s.km.CreateKeys(ctx)
+				if err != nil {
+					level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", err)
+					break
+				}
+			}
+
 		}
 	}()
+
 	return nil
 }
 
