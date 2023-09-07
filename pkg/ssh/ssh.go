@@ -25,6 +25,7 @@ type Config struct {
 	KeyFile    string
 	SSHFlags   []string // Additional flags to be passed to ssh(1). e.g. --ssh-flag="-vvv" --ssh-flag="-L 80:localhost:80"
 	Port       int
+	LogLevel   int
 	PDC        pdc.Config
 	LegacyMode bool
 	URL        *url.URL
@@ -38,9 +39,10 @@ func DefaultConfig() *Config {
 		root = ""
 	}
 	return &Config{
-		Port:    22,
-		PDC:     pdc.Config{},
-		KeyFile: path.Join(root, ".ssh/grafana_pdc"),
+		Port:     22,
+		LogLevel: 2,
+		PDC:      pdc.Config{},
+		KeyFile:  path.Join(root, ".ssh/grafana_pdc"),
 	}
 }
 
@@ -49,6 +51,11 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 	cfg.SSHFlags = []string{}
 	f.StringVar(&cfg.KeyFile, "ssh-key-file", def.KeyFile, "The path to the SSH key file.")
+	f.IntVar(&cfg.LogLevel, "log-level", def.LogLevel, "The level of log verbosity. The maximum is 3.")
+	// use default log level if invalid
+	if cfg.LogLevel > 3 {
+		cfg.LogLevel = def.LogLevel
+	}
 	f.Func("ssh-flag", "Additional flags to be passed to ssh. Can be set more than once.", cfg.addSSHFlag)
 }
 
@@ -107,7 +114,22 @@ func (s *Client) starting(ctx context.Context) error {
 
 	go func() {
 		for {
+			// check keys and cert validity before (re)start, create new cert if required
+			if s.km != nil {
+				err := s.km.CreateKeys(ctx)
+				if err != nil {
+					level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", err)
+					break
+				}
+			}
+
+			flags, err := s.SSHFlagsFromConfig()
+			if err != nil {
+				level.Error(s.logger).Log("msg", fmt.Sprintf("could not parse flags: %s", err))
+				return
+			}
 			level.Debug(s.logger).Log("msg", fmt.Sprintf("parsed flags: %s", flags))
+
 			cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
 
 			cmd.Stdout = os.Stdout
@@ -149,7 +171,6 @@ func (s *Client) stopping(err error) error {
 // It does not stop default flags from being overidden, but only the first instance
 // of `-o` flags are used.
 func (s *Client) SSHFlagsFromConfig() ([]string, error) {
-
 	if s.cfg.LegacyMode {
 		level.Warn(s.logger).Log("msg", "running in legacy mode")
 		return s.cfg.Args, nil
@@ -158,24 +179,37 @@ func (s *Client) SSHFlagsFromConfig() ([]string, error) {
 	keyFileArr := strings.Split(s.cfg.KeyFile, "/")
 	keyFileDir := strings.Join(keyFileArr[:len(keyFileArr)-1], "/")
 
+	logLevelFlag := ""
+	if s.cfg.LogLevel > 0 {
+		logLevelFlag = "-" + strings.Repeat("v", s.cfg.LogLevel)
+	}
+
 	gwURL := s.cfg.URL
+	user := fmt.Sprintf("%s@%s", s.cfg.PDC.HostedGrafanaID, gwURL.String())
+	if s.cfg.PDC.Network != "" {
+		user = fmt.Sprintf("%s/%s@%s", s.cfg.PDC.HostedGrafanaID, s.cfg.PDC.Network, gwURL.String())
+	}
+
 	result := []string{
 		"-i",
 		s.cfg.KeyFile,
-		fmt.Sprintf("%s@%s", s.cfg.PDC.HostedGrafanaID, gwURL.String()),
+		user,
 		"-p",
 		fmt.Sprintf("%d", s.cfg.Port),
 		"-R", "0",
-		"-vv",
 		"-o", fmt.Sprintf("UserKnownHostsFile=%s/%s", keyFileDir, KnownHostsFile),
 		"-o", fmt.Sprintf("CertificateFile=%s-cert.pub", s.cfg.KeyFile),
 		"-o", "ServerAliveInterval=15",
 	}
 
+	if logLevelFlag != "" {
+		result = append(result, logLevelFlag)
+	}
+
 	for _, f := range s.cfg.SSHFlags {
-		// flags are in the format '-vv' or '-o Option=Value'. Split to flatten strings
-		// in the second format
-		result = append(result, strings.Split(f, " ")...)
+		// flags are in the format '-vv' or '-o Option=Value'. Split once to flatten strings
+		// in the second format whilst accommodating -o Option='value with whitespace'
+		result = append(result, strings.SplitN(f, " ", 1)...)
 	}
 
 	return result, nil

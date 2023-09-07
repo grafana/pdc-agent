@@ -16,8 +16,9 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-
 	"github.com/grafana/pdc-agent/pkg/httpclient"
+	"github.com/hashicorp/go-retryablehttp"
+
 	"golang.org/x/crypto/ssh"
 )
 
@@ -32,12 +33,15 @@ var (
 type Config struct {
 	Token           string
 	HostedGrafanaID string
+	Network         string
 	URL             *url.URL
+	RetryMax        int
 }
 
 func (cfg *Config) RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&cfg.Token, "token", "", "The token to use to authenticate with Grafana Cloud. It must have the pdc-signing:write scope")
 	fs.StringVar(&cfg.HostedGrafanaID, "gcloud-hosted-grafana-id", "", "The ID of the Hosted Grafana instance to connect to")
+	fs.StringVar(&cfg.Network, "network", "", "The name of the PDC network to connect to")
 }
 
 // Client is a PDC API client
@@ -92,9 +96,19 @@ func NewClient(cfg *Config, logger log.Logger) (Client, error) {
 		return nil, errors.New("-api-url cannot be nil")
 	}
 
+	rc := retryablehttp.NewClient()
+	if cfg.RetryMax != 0 {
+		rc.RetryMax = cfg.RetryMax
+	}
+	rc.Logger = &logAdapter{logger}
+	rc.CheckRetry = retryablehttp.ErrorPropagatedRetryPolicy
+	hc := rc.StandardClient()
+
+	hc.Transport = httpclient.UserAgentTransport(hc.Transport)
+
 	return &pdcClient{
 		cfg:        cfg,
-		httpClient: &http.Client{Transport: httpclient.UserAgentTransport(nil)},
+		httpClient: hc,
 		logger:     logger,
 	}, nil
 }
@@ -108,6 +122,7 @@ type pdcClient struct {
 func (c *pdcClient) SignSSHKey(ctx context.Context, key []byte) (*SigningResponse, error) {
 	resp, err := c.call(ctx, http.MethodPost, "/pdc/api/v1/sign-public-key", nil, map[string]string{
 		"publicKey": string(key),
+		"network":   c.cfg.Network,
 	})
 	if err != nil {
 		return nil, err
@@ -177,4 +192,32 @@ func (c *pdcClient) call(ctx context.Context, method, rpath string, params map[s
 		level.Error(c.logger).Log("msg", "unknown response from PDC API", "code", resp.StatusCode)
 		return respB, ErrInternal
 	}
+}
+
+type logAdapter struct {
+	l log.Logger
+}
+
+var _ retryablehttp.LeveledLogger = (*logAdapter)(nil)
+
+func (l *logAdapter) Debug(msg string, kv ...interface{}) {
+	keyvals := []interface{}{"msg", msg}
+	keyvals = append(keyvals, kv...)
+	level.Debug(l.l).Log(keyvals...)
+}
+
+func (l *logAdapter) Info(msg string, kv ...interface{}) {
+	keyvals := []interface{}{"msg", msg}
+	keyvals = append(keyvals, kv...)
+	level.Info(l.l).Log(keyvals...)
+}
+func (l *logAdapter) Warn(msg string, kv ...interface{}) {
+	keyvals := []interface{}{"msg", msg}
+	keyvals = append(keyvals, kv...)
+	level.Warn(l.l).Log(keyvals...)
+}
+func (l *logAdapter) Error(msg string, kv ...interface{}) {
+	keyvals := []interface{}{"msg", msg}
+	keyvals = append(keyvals, kv...)
+	level.Error(l.l).Log(keyvals...)
 }
