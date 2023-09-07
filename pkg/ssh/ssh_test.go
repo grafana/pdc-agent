@@ -206,7 +206,7 @@ func TestClient_SSHArgs(t *testing.T) {
 		cfg := ssh.DefaultConfig()
 		cfg.LogLevel = 0
 
-		sshClient := newTestClient(t, cfg)
+		sshClient := newTestClient(t, cfg, false)
 		result, err := sshClient.SSHFlagsFromConfig()
 
 		assert.Nil(t, err)
@@ -229,7 +229,7 @@ func TestClient_SSHArgs(t *testing.T) {
 
 		cfg.LogLevel = 2
 
-		sshClient = newTestClient(t, cfg)
+		sshClient = newTestClient(t, cfg, false)
 		result, err = sshClient.SSHFlagsFromConfig()
 
 		assert.Nil(t, err)

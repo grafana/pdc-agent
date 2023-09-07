@@ -111,25 +111,10 @@ func (s *Client) starting(ctx context.Context) error {
 		level.Error(s.logger).Log("msg", fmt.Sprintf("could not parse flags: %s", err))
 		return err
 	}
+	level.Debug(s.logger).Log("msg", fmt.Sprintf("parsed flags: %s", flags))
 
 	go func() {
 		for {
-			// check keys and cert validity before (re)start, create new cert if required
-			if s.km != nil {
-				err := s.km.CreateKeys(ctx)
-				if err != nil {
-					level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", err)
-					break
-				}
-			}
-
-			flags, err := s.SSHFlagsFromConfig()
-			if err != nil {
-				level.Error(s.logger).Log("msg", fmt.Sprintf("could not parse flags: %s", err))
-				return
-			}
-			level.Debug(s.logger).Log("msg", fmt.Sprintf("parsed flags: %s", flags))
-
 			cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
 
 			cmd.Stdout = os.Stdout
