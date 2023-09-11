@@ -143,7 +143,7 @@ func TestClient_SSHArgs(t *testing.T) {
 		result, err := sshClient.SSHFlagsFromConfig()
 
 		assert.Nil(t, err)
-		assert.Equal(t, strings.Split(fmt.Sprintf("-i %s 123@host.grafana.net -p 22 -R 0 -o UserKnownHostsFile=%s -o CertificateFile=%s -o ServerAliveInterval=15 -vv", cfg.KeyFile, path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), cfg.KeyFile+"-cert.pub"), " "), result)
+		assert.Equal(t, strings.Split(fmt.Sprintf("-i %s 123@host.grafana.net -p 22 -R 0 -o UserKnownHostsFile=%s -o CertificateFile=%s -o ServerAliveInterval=15 -o ConnectTimeout=1 -vv", cfg.KeyFile, path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), cfg.KeyFile+"-cert.pub"), " "), result)
 	})
 
 	t.Run("legacy args (deprecated)", func(t *testing.T) {
@@ -193,6 +193,8 @@ func TestClient_SSHArgs(t *testing.T) {
 			fmt.Sprintf("CertificateFile=%s", cfg.KeyFile+"-cert.pub"),
 			"-o",
 			"ServerAliveInterval=15",
+			"-o",
+			"ConnectTimeout=1",
 			"-vv",
 			"-vvv",
 			"-o testoption=2",
@@ -224,6 +226,8 @@ func TestClient_SSHArgs(t *testing.T) {
 			fmt.Sprintf("CertificateFile=%s", cfg.KeyFile+"-cert.pub"),
 			"-o",
 			"ServerAliveInterval=15",
+			"-o",
+			"ConnectTimeout=1",
 		}
 		assert.Equal(t, expected, result)
 
@@ -247,6 +251,8 @@ func TestClient_SSHArgs(t *testing.T) {
 			fmt.Sprintf("CertificateFile=%s", cfg.KeyFile+"-cert.pub"),
 			"-o",
 			"ServerAliveInterval=15",
+			"-o",
+			"ConnectTimeout=1",
 			"-vv",
 		}
 		assert.Equal(t, expected, result)
