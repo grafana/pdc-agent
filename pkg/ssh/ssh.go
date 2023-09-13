@@ -185,6 +185,7 @@ func (s *Client) SSHFlagsFromConfig() ([]string, error) {
 		"-o", fmt.Sprintf("UserKnownHostsFile=%s/%s", keyFileDir, KnownHostsFile),
 		"-o", fmt.Sprintf("CertificateFile=%s-cert.pub", s.cfg.KeyFile),
 		"-o", "ServerAliveInterval=15",
+		"-o", "ConnectTimeout=1",
 	}
 
 	if logLevelFlag != "" {
