@@ -137,7 +137,6 @@ func (s *Client) starting(ctx context.Context) error {
 				err := s.km.CreateKeys(ctx)
 				if err != nil {
 					level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", err)
-					break
 				}
 			}
 
