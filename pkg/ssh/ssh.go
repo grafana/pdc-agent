@@ -170,9 +170,6 @@ func (s *Client) SSHFlagsFromConfig() ([]string, error) {
 
 	gwURL := s.cfg.URL
 	user := fmt.Sprintf("%s@%s", s.cfg.PDC.HostedGrafanaID, gwURL.String())
-	if s.cfg.PDC.Network != "" {
-		user = fmt.Sprintf("%s/%s@%s", s.cfg.PDC.HostedGrafanaID, s.cfg.PDC.Network, gwURL.String())
-	}
 
 	result := []string{
 		"-i",
