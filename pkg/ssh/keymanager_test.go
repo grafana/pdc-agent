@@ -107,7 +107,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				_ = os.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
 				_ = os.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
 				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), kh, 0644)
-				_ = os.WriteFile(cfg.KeyFile+"_hash", []byte("bd3d1bc9966d7c3636cc5ab72b1410f76500a01ef7605edb95214899fc1474a4"), 0644)
+				_ = os.WriteFile(cfg.KeyFile+"_hash", []byte("6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"), 0644)
 			},
 			assertFn:           assertExpectedFiles,
 			wantSigningRequest: true,
@@ -121,7 +121,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				_ = os.WriteFile(cfg.KeyFile+".pub", []byte("not a public key"), 0644)
 				_ = os.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
 				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), kh, 0644)
-				_ = os.WriteFile(cfg.KeyFile+"_hash", []byte("bd3d1bc9966d7c3636cc5ab72b1410f76500a01ef7605edb95214899fc1474a4"), 0644)
+				_ = os.WriteFile(cfg.KeyFile+"_hash", []byte("6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"), 0644)
 			},
 			assertFn:           assertExpectedFiles,
 			wantSigningRequest: true,
@@ -135,7 +135,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				_ = os.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
 				_ = os.WriteFile(cfg.KeyFile+"-cert.pub", []byte("invalid cert"), 0644)
 				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), kh, 0644)
-				_ = os.WriteFile(cfg.KeyFile+"_hash", []byte("bd3d1bc9966d7c3636cc5ab72b1410f76500a01ef7605edb95214899fc1474a4"), 0644)
+				_ = os.WriteFile(cfg.KeyFile+"_hash", []byte("6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"), 0644)
 			},
 			assertFn:           assertExpectedFiles,
 			wantSigningRequest: true,
@@ -149,7 +149,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				_ = os.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
 				_ = os.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
 				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), []byte("invalid known_hosts"), 0644)
-				_ = os.WriteFile(cfg.KeyFile+"_hash", []byte("bd3d1bc9966d7c3636cc5ab72b1410f76500a01ef7605edb95214899fc1474a4"), 0644)
+				_ = os.WriteFile(cfg.KeyFile+"_hash", []byte("6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"), 0644)
 			},
 			wantSigningRequest: true,
 			assertFn:           assertExpectedFiles,
@@ -168,7 +168,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				_ = os.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
 				_ = os.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
 				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), kh, 0644)
-				_ = os.WriteFile(cfg.KeyFile+"_hash", []byte("bd3d1bc9966d7c3636cc5ab72b1410f76500a01ef7605edb95214899fc1474a4"), 0644)
+				_ = os.WriteFile(cfg.KeyFile+"_hash", []byte("6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"), 0644)
 			},
 			wantSigningRequest: false,
 			assertFn: func(t *testing.T, cfg *ssh.Config) {
@@ -246,7 +246,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			ctx := context.Background()
 
 			// create default configs
-			pdcCfg := pdc.Config{HostedGrafanaID: "1", Network: "default"}
+			pdcCfg := pdc.Config{HostedGrafanaID: "1"}
 			cfg := ssh.DefaultConfig()
 			cfg.PDC = pdcCfg
 
