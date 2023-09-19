@@ -42,6 +42,7 @@ func (cfg *Config) RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&cfg.Token, "token", "", "The token to use to authenticate with Grafana Cloud. It must have the pdc-signing:write scope")
 	fs.StringVar(&cfg.HostedGrafanaID, "gcloud-hosted-grafana-id", "", "The ID of the Hosted Grafana instance to connect to")
 	fs.StringVar(&deprecated, "network", "", "DEPRECATED: The name of the PDC network to connect to")
+	fs.IntVar(&cfg.RetryMax, "retrymax", 4, "The max num of retries for http requests")
 }
 
 // Client is a PDC API client
