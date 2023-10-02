@@ -173,6 +173,7 @@ func TestClient_SSHArgs(t *testing.T) {
 			"-vvv",
 			"-o TestOption=2",
 			"-o PermitRemoteOpen=host:123 host:456",
+			"-o ConnectTimeout=3",
 		}
 
 		sshClient := newTestClient(t, cfg, false)
@@ -188,7 +189,7 @@ func TestClient_SSHArgs(t *testing.T) {
 			"-R",
 			"0",
 			"-o", fmt.Sprintf("CertificateFile=%s", cfg.KeyFile+"-cert.pub"),
-			"-o", "ConnectTimeout=1",
+			"-o", "ConnectTimeout=3",
 			"-o", "PermitRemoteOpen=host:123 host:456",
 			"-o", "ServerAliveInterval=15",
 			"-o", "TestOption=2",
