@@ -2,12 +2,14 @@ package ssh
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
 	"path"
+	"sort"
 	"strings"
 	"time"
 
@@ -171,6 +173,34 @@ func (s *Client) SSHFlagsFromConfig() ([]string, error) {
 	gwURL := s.cfg.URL
 	user := fmt.Sprintf("%s@%s", s.cfg.PDC.HostedGrafanaID, gwURL.String())
 
+	// keep ssh_config parameters in a map so they can be oveeridden by the user
+	sshOptions := map[string]string{
+		"UserKnownHostsFile":  fmt.Sprintf("%s/%s", keyFileDir, KnownHostsFile),
+		"CertificateFile":     fmt.Sprintf("%s-cert.pub", s.cfg.KeyFile),
+		"ServerAliveInterval": "15",
+		"ConnectTimeout":      "1",
+	}
+
+	nonOptionFlags := []string{} // for backwards compatibility, on -v particularly
+	for _, f := range s.cfg.SSHFlags {
+		name, value, err := extractOptionFromFlag(f)
+		if err != nil {
+			return nil, err
+		}
+		if name == "" {
+			nonOptionFlags = append(nonOptionFlags, f)
+			continue
+		}
+		sshOptions[name] = value
+	}
+
+	// make options ordering deterministic
+	optionsList := []string{}
+	for o := range sshOptions {
+		optionsList = append(optionsList, o)
+	}
+	sort.Strings(optionsList)
+
 	result := []string{
 		"-i",
 		s.cfg.KeyFile,
@@ -178,21 +208,30 @@ func (s *Client) SSHFlagsFromConfig() ([]string, error) {
 		"-p",
 		fmt.Sprintf("%d", s.cfg.Port),
 		"-R", "0",
-		"-o", fmt.Sprintf("UserKnownHostsFile=%s/%s", keyFileDir, KnownHostsFile),
-		"-o", fmt.Sprintf("CertificateFile=%s-cert.pub", s.cfg.KeyFile),
-		"-o", "ServerAliveInterval=15",
-		"-o", "ConnectTimeout=1",
+	}
+
+	for _, o := range optionsList {
+		result = append(result, "-o", fmt.Sprintf("%s=%s", o, sshOptions[o]))
 	}
 
 	if logLevelFlag != "" {
 		result = append(result, logLevelFlag)
 	}
 
-	for _, f := range s.cfg.SSHFlags {
-		// flags are in the format '-vv' or '-o Option=Value'. Split once to flatten strings
-		// in the second format whilst accommodating -o Option='value with whitespace'
-		result = append(result, strings.SplitN(f, " ", 1)...)
-	}
+	result = append(result, nonOptionFlags...)
 
 	return result, nil
+}
+
+func extractOptionFromFlag(flag string) (string, string, error) {
+	parts := strings.SplitN(flag, " ", 2)
+	if parts[0] != "-o" {
+		return "", "", nil
+	}
+
+	oParts := strings.Split(parts[1], "=")
+	if len(oParts) != 2 {
+		return "", "", errors.New("invalid ssh option format, expecting '-o Name=string'")
+	}
+	return oParts[0], oParts[1], nil
 }
