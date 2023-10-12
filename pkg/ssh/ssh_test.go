@@ -143,7 +143,7 @@ func TestClient_SSHArgs(t *testing.T) {
 		result, err := sshClient.SSHFlagsFromConfig()
 
 		assert.Nil(t, err)
-		assert.Equal(t, strings.Split(fmt.Sprintf("-i %s 123@host.grafana.net -p 22 -R 0 -o UserKnownHostsFile=%s -o CertificateFile=%s -o ServerAliveInterval=15 -o ConnectTimeout=1 -vv", cfg.KeyFile, path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), cfg.KeyFile+"-cert.pub"), " "), result)
+		assert.Equal(t, strings.Split(fmt.Sprintf("-i %s 123@host.grafana.net -p 22 -R 0 -o CertificateFile=%s -o ConnectTimeout=1 -o ServerAliveInterval=15 -o UserKnownHostsFile=%s -vv", cfg.KeyFile, cfg.KeyFile+"-cert.pub", path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile)), " "), result)
 	})
 
 	t.Run("legacy args (deprecated)", func(t *testing.T) {
@@ -171,8 +171,9 @@ func TestClient_SSHArgs(t *testing.T) {
 
 		cfg.SSHFlags = []string{
 			"-vvv",
-			"-o testoption=2",
+			"-o TestOption=2",
 			"-o PermitRemoteOpen=host:123 host:456",
+			"-o ConnectTimeout=3",
 		}
 
 		sshClient := newTestClient(t, cfg, false)
@@ -187,18 +188,14 @@ func TestClient_SSHArgs(t *testing.T) {
 			"22",
 			"-R",
 			"0",
-			"-o",
-			fmt.Sprintf("UserKnownHostsFile=%s", path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile)),
-			"-o",
-			fmt.Sprintf("CertificateFile=%s", cfg.KeyFile+"-cert.pub"),
-			"-o",
-			"ServerAliveInterval=15",
-			"-o",
-			"ConnectTimeout=1",
+			"-o", fmt.Sprintf("CertificateFile=%s", cfg.KeyFile+"-cert.pub"),
+			"-o", "ConnectTimeout=3",
+			"-o", "PermitRemoteOpen=host:123 host:456",
+			"-o", "ServerAliveInterval=15",
+			"-o", "TestOption=2",
+			"-o", fmt.Sprintf("UserKnownHostsFile=%s", path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile)),
 			"-vv",
 			"-vvv",
-			"-o testoption=2",
-			"-o PermitRemoteOpen=host:123 host:456",
 		}
 		assert.Equal(t, expected, result)
 
@@ -220,14 +217,10 @@ func TestClient_SSHArgs(t *testing.T) {
 			"22",
 			"-R",
 			"0",
-			"-o",
-			fmt.Sprintf("UserKnownHostsFile=%s", path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile)),
-			"-o",
-			fmt.Sprintf("CertificateFile=%s", cfg.KeyFile+"-cert.pub"),
-			"-o",
-			"ServerAliveInterval=15",
-			"-o",
-			"ConnectTimeout=1",
+			"-o", fmt.Sprintf("CertificateFile=%s", cfg.KeyFile+"-cert.pub"),
+			"-o", "ConnectTimeout=1",
+			"-o", "ServerAliveInterval=15",
+			"-o", fmt.Sprintf("UserKnownHostsFile=%s", path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile)),
 		}
 		assert.Equal(t, expected, result)
 
@@ -245,18 +238,32 @@ func TestClient_SSHArgs(t *testing.T) {
 			"22",
 			"-R",
 			"0",
-			"-o",
-			fmt.Sprintf("UserKnownHostsFile=%s", path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile)),
-			"-o",
-			fmt.Sprintf("CertificateFile=%s", cfg.KeyFile+"-cert.pub"),
-			"-o",
-			"ServerAliveInterval=15",
-			"-o",
-			"ConnectTimeout=1",
+			"-o", fmt.Sprintf("CertificateFile=%s", cfg.KeyFile+"-cert.pub"),
+			"-o", "ConnectTimeout=1",
+			"-o", "ServerAliveInterval=15",
+			"-o", fmt.Sprintf("UserKnownHostsFile=%s", path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile)),
 			"-vv",
 		}
 		assert.Equal(t, expected, result)
 
+	})
+
+	t.Run("errors on invalid option flag", func(t *testing.T) {
+		cfg := ssh.DefaultConfig()
+
+		cfg.URL = mustParseURL("host.grafana.net")
+		cfg.PDC = pdc.Config{
+			HostedGrafanaID: "123",
+		}
+
+		cfg.SSHFlags = []string{
+			"-o TestOption invalid format",
+		}
+
+		sshClient := newTestClient(t, cfg, false)
+		_, err := sshClient.SSHFlagsFromConfig()
+		assert.NotNil(t, err)
+		assert.Equal(t, err.Error(), "invalid ssh option format, expecting '-o Name=string'")
 	})
 }
 
