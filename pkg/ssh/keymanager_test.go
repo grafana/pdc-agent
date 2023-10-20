@@ -1,3 +1,4 @@
+//nolint:goconst,nolintlint
 package ssh_test
 
 import (
