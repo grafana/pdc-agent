@@ -72,9 +72,6 @@ QW1RbmNCaFJzZE4rblR0WjJ3T2NNaFpyTkpkbFdoWHlrNUNvcnYxTXhiZVBPTUFK
 azl0ZGNvOFFqN0pIcFR0WnFBRm12c1E9PQo=
 -----END CERTIFICATE-----
 `
-	pubSuffix  = ".pub"
-	certSuffix = "-cert.pub"
-	hashSuffix = "_hash"
 )
 
 func TestKeyManager_EnsureKeysExist(t *testing.T) {
@@ -179,7 +176,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				assert.NoError(t, err)
 				assert.NotNil(t, keyFile)
 
-				pubKeyFile, err := os.ReadFile(cfg.KeyFile + ".pub")
+				pubKeyFile, err := os.ReadFile(cfg.KeyFile + pubSuffix)
 				assert.NoError(t, err)
 				assert.NotNil(t, pubKeyFile)
 
@@ -187,12 +184,12 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				_, err = os.ReadFile(path.Join(kfd, ssh.KnownHostsFile))
 				assert.NoError(t, err)
 
-				cert, err := os.ReadFile(cfg.KeyFile + "-cert.pub")
+				cert, err := os.ReadFile(cfg.KeyFile + certSuffix)
 				assert.NoError(t, err)
 				_, _, _, _, err = gossh.ParseAuthorizedKey(cert)
 				assert.NoError(t, err)
 
-				contents, err := os.ReadFile(cfg.KeyFile + "_hash")
+				contents, err := os.ReadFile(cfg.KeyFile + hashSuffix)
 				assert.NoError(t, err)
 				assert.NotEmpty(t, contents)
 			},
@@ -378,7 +375,7 @@ func assertExpectedFiles(t *testing.T, cfg *ssh.Config) {
 	assert.NoError(t, err)
 	assert.NotNil(t, keyFile)
 
-	pubKeyFile, err := os.ReadFile(cfg.KeyFile + ".pub")
+	pubKeyFile, err := os.ReadFile(cfg.KeyFile + pubSuffix)
 	assert.NoError(t, err)
 	assert.NotNil(t, pubKeyFile)
 
@@ -387,11 +384,11 @@ func assertExpectedFiles(t *testing.T, cfg *ssh.Config) {
 	assert.NoError(t, err)
 	assert.Equal(t, knownHosts, string(kh))
 
-	cert, err := os.ReadFile(cfg.KeyFile + "-cert.pub")
+	cert, err := os.ReadFile(cfg.KeyFile + certSuffix)
 	assert.NoError(t, err)
 	assert.Equal(t, mustParseCert(t), cert)
 
-	contents, err := os.ReadFile(cfg.KeyFile + "_hash")
+	contents, err := os.ReadFile(cfg.KeyFile + hashSuffix)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, contents)
 }
