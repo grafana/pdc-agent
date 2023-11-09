@@ -103,7 +103,7 @@ func (s *Client) starting(ctx context.Context) error {
 
 	if !s.cfg.SkipSSHValidation {
 		if err := validateSSHVersion(ctx, s.SSHCmd); err != nil {
-			return fmt.Errorf("failed to check ssh version: %w", err)
+			return fmt.Errorf("failed to validate ssh version: %w", err)
 		}
 	}
 
