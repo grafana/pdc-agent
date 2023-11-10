@@ -1,6 +1,6 @@
 module github.com/grafana/pdc-agent
 
-go 1.19
+go 1.21
 
 require (
 	github.com/go-kit/log v0.2.1

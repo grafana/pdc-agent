@@ -27,7 +27,7 @@ import (
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
-var (
+const (
 	knownHosts   = `known hosts`
 	expectedCert = `
 -----BEGIN CERTIFICATE-----
@@ -104,10 +104,10 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				t.Helper()
 				_, pubKey, cert, kh := generateKeys("", "")
 				_ = os.WriteFile(cfg.KeyFile, []byte("invalid private key"), 0600)
-				_ = os.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
-				_ = os.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
+				_ = os.WriteFile(cfg.KeyFile+pubSuffix, pubKey, 0644)
+				_ = os.WriteFile(cfg.KeyFile+certSuffix, cert, 0644)
 				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), kh, 0644)
-				_ = os.WriteFile(cfg.KeyFile+"_hash", []byte("6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"), 0644)
+				_ = os.WriteFile(cfg.KeyFile+hashSuffix, []byte("6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"), 0644)
 			},
 			assertFn:           assertExpectedFiles,
 			wantSigningRequest: true,
@@ -118,10 +118,10 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				t.Helper()
 				privKey, _, cert, kh := generateKeys("", "")
 				_ = os.WriteFile(cfg.KeyFile, privKey, 0600)
-				_ = os.WriteFile(cfg.KeyFile+".pub", []byte("not a public key"), 0644)
-				_ = os.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
+				_ = os.WriteFile(cfg.KeyFile+pubSuffix, []byte("not a public key"), 0644)
+				_ = os.WriteFile(cfg.KeyFile+certSuffix, cert, 0644)
 				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), kh, 0644)
-				_ = os.WriteFile(cfg.KeyFile+"_hash", []byte("6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"), 0644)
+				_ = os.WriteFile(cfg.KeyFile+hashSuffix, []byte("6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"), 0644)
 			},
 			assertFn:           assertExpectedFiles,
 			wantSigningRequest: true,
@@ -132,10 +132,10 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				t.Helper()
 				privKey, pubKey, _, kh := generateKeys("", "")
 				_ = os.WriteFile(cfg.KeyFile, privKey, 0600)
-				_ = os.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
-				_ = os.WriteFile(cfg.KeyFile+"-cert.pub", []byte("invalid cert"), 0644)
+				_ = os.WriteFile(cfg.KeyFile+pubSuffix, pubKey, 0644)
+				_ = os.WriteFile(cfg.KeyFile+certSuffix, []byte("invalid cert"), 0644)
 				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), kh, 0644)
-				_ = os.WriteFile(cfg.KeyFile+"_hash", []byte("6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"), 0644)
+				_ = os.WriteFile(cfg.KeyFile+hashSuffix, []byte("6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"), 0644)
 			},
 			assertFn:           assertExpectedFiles,
 			wantSigningRequest: true,
@@ -146,10 +146,10 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				t.Helper()
 				privKey, pubKey, cert, _ := generateKeys("", "")
 				_ = os.WriteFile(cfg.KeyFile, privKey, 0600)
-				_ = os.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
-				_ = os.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
+				_ = os.WriteFile(cfg.KeyFile+pubSuffix, pubKey, 0644)
+				_ = os.WriteFile(cfg.KeyFile+certSuffix, cert, 0644)
 				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), []byte("invalid known_hosts"), 0644)
-				_ = os.WriteFile(cfg.KeyFile+"_hash", []byte("6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"), 0644)
+				_ = os.WriteFile(cfg.KeyFile+hashSuffix, []byte("6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"), 0644)
 			},
 			wantSigningRequest: true,
 			assertFn:           assertExpectedFiles,
@@ -165,10 +165,10 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				t.Helper()
 				privKey, pubKey, cert, kh := generateKeys("", "")
 				_ = os.WriteFile(cfg.KeyFile, privKey, 0600)
-				_ = os.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
-				_ = os.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
+				_ = os.WriteFile(cfg.KeyFile+pubSuffix, pubKey, 0644)
+				_ = os.WriteFile(cfg.KeyFile+certSuffix, cert, 0644)
 				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), kh, 0644)
-				_ = os.WriteFile(cfg.KeyFile+"_hash", []byte("6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"), 0644)
+				_ = os.WriteFile(cfg.KeyFile+hashSuffix, []byte("6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"), 0644)
 			},
 			wantSigningRequest: false,
 			assertFn: func(t *testing.T, cfg *ssh.Config) {
@@ -176,7 +176,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				assert.NoError(t, err)
 				assert.NotNil(t, keyFile)
 
-				pubKeyFile, err := os.ReadFile(cfg.KeyFile + ".pub")
+				pubKeyFile, err := os.ReadFile(cfg.KeyFile + pubSuffix)
 				assert.NoError(t, err)
 				assert.NotNil(t, pubKeyFile)
 
@@ -184,12 +184,12 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				_, err = os.ReadFile(path.Join(kfd, ssh.KnownHostsFile))
 				assert.NoError(t, err)
 
-				cert, err := os.ReadFile(cfg.KeyFile + "-cert.pub")
+				cert, err := os.ReadFile(cfg.KeyFile + certSuffix)
 				assert.NoError(t, err)
 				_, _, _, _, err = gossh.ParseAuthorizedKey(cert)
 				assert.NoError(t, err)
 
-				contents, err := os.ReadFile(cfg.KeyFile + "_hash")
+				contents, err := os.ReadFile(cfg.KeyFile + hashSuffix)
 				assert.NoError(t, err)
 				assert.NotEmpty(t, contents)
 			},
@@ -201,8 +201,8 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				// gen cert with validity period in the past
 				privKey, pubKey, cert, kh := generateKeys("-10m", "-1h")
 				_ = os.WriteFile(cfg.KeyFile, privKey, 0600)
-				_ = os.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
-				_ = os.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
+				_ = os.WriteFile(cfg.KeyFile+pubSuffix, pubKey, 0644)
+				_ = os.WriteFile(cfg.KeyFile+certSuffix, cert, 0644)
 				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), kh, 0644)
 			},
 			wantSigningRequest: true,
@@ -215,11 +215,11 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				// gen cert with validity period in the past
 				privKey, pubKey, cert, kh := generateKeys("", "")
 				_ = os.WriteFile(cfg.KeyFile, privKey, 0600)
-				_ = os.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
-				_ = os.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
+				_ = os.WriteFile(cfg.KeyFile+pubSuffix, pubKey, 0644)
+				_ = os.WriteFile(cfg.KeyFile+certSuffix, cert, 0644)
 				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), kh, 0644)
 				// The new argument hash is different from the previous one.
-				_ = os.WriteFile(cfg.KeyFile+"_hash", []byte("some hash"), 0644)
+				_ = os.WriteFile(cfg.KeyFile+hashSuffix, []byte("some hash"), 0644)
 			},
 			wantSigningRequest: true,
 			assertFn:           assertExpectedFiles,
@@ -231,8 +231,8 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 				// gen cert with validity period in the past
 				privKey, pubKey, cert, kh := generateKeys("", "")
 				_ = os.WriteFile(cfg.KeyFile, privKey, 0600)
-				_ = os.WriteFile(cfg.KeyFile+".pub", pubKey, 0644)
-				_ = os.WriteFile(cfg.KeyFile+"-cert.pub", cert, 0644)
+				_ = os.WriteFile(cfg.KeyFile+pubSuffix, pubKey, 0644)
+				_ = os.WriteFile(cfg.KeyFile+certSuffix, cert, 0644)
 				_ = os.WriteFile(path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile), kh, 0644)
 				// Note that we are not creating a hash file.
 			},
@@ -375,7 +375,7 @@ func assertExpectedFiles(t *testing.T, cfg *ssh.Config) {
 	assert.NoError(t, err)
 	assert.NotNil(t, keyFile)
 
-	pubKeyFile, err := os.ReadFile(cfg.KeyFile + ".pub")
+	pubKeyFile, err := os.ReadFile(cfg.KeyFile + pubSuffix)
 	assert.NoError(t, err)
 	assert.NotNil(t, pubKeyFile)
 
@@ -384,11 +384,11 @@ func assertExpectedFiles(t *testing.T, cfg *ssh.Config) {
 	assert.NoError(t, err)
 	assert.Equal(t, knownHosts, string(kh))
 
-	cert, err := os.ReadFile(cfg.KeyFile + "-cert.pub")
+	cert, err := os.ReadFile(cfg.KeyFile + certSuffix)
 	assert.NoError(t, err)
 	assert.Equal(t, mustParseCert(t), cert)
 
-	contents, err := os.ReadFile(cfg.KeyFile + "_hash")
+	contents, err := os.ReadFile(cfg.KeyFile + hashSuffix)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, contents)
 }

@@ -120,7 +120,7 @@ type pdcClient struct {
 }
 
 func (c *pdcClient) SignSSHKey(ctx context.Context, key []byte) (*SigningResponse, error) {
-	resp, err := c.call(ctx, http.MethodPost, "/pdc/api/v1/sign-public-key", nil, map[string]string{
+	resp, err := c.call(ctx, http.MethodPost, "/api/v1/sign-public-key", nil, map[string]string{
 		"publicKey": string(key),
 	})
 	if err != nil {
@@ -170,6 +170,8 @@ func (c *pdcClient) call(ctx context.Context, method, rpath string, params map[s
 	}
 
 	req.Header.Add("Authorization", "Basic "+buf.String())
+	req.Header.Add("X-Scope-OrgID", "tunnel-demo")
+	req.Header.Add("X-Access-Policy-ID", "network1")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

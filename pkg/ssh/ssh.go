@@ -20,11 +20,12 @@ import (
 
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/pdc-agent/pkg/pdc"
+	"github.com/grafana/pdc-agent/pkg/retry"
 )
 
 const (
 	// The exit code sent by the pdc server when the connection limit is reached.
-	ConnectionLimitReachedCode = "10001"
+	ConnectionLimitReachedCode = 10001
 )
 
 // Create a regex expression that capures the number in a string like: "debug1: Exit status 10001"
@@ -51,7 +52,7 @@ func DefaultConfig() *Config {
 		root = ""
 	}
 	return &Config{
-		Port:     22,
+		Port:     2244,
 		LogLevel: 2,
 		PDC:      pdc.Config{},
 		KeyFile:  path.Join(root, ".ssh/grafana_pdc"),
@@ -125,42 +126,32 @@ func (s *Client) starting(ctx context.Context) error {
 	}
 	level.Debug(s.logger).Log("msg", fmt.Sprintf("parsed flags: %s", flags))
 
-	go func() {
-		for {
-			cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
+	retryOpts := retry.Opts{MaxBackoff: 16 * time.Second, InitialBackoff: 1 * time.Second}
+	go retry.Forever(retryOpts, func() error {
+		cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
 
-			exitStatusWatcher := newExitStatusWatcher(os.Stderr)
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = exitStatusWatcher
-			_ = cmd.Run()
-			if ctx.Err() != nil {
-				break // context was canceled
-			}
-
-			// The server won't accept new connections using the current tunnel id, there's no need to try again.
-			if exitStatusWatcher.exitStatus == ConnectionLimitReachedCode {
-				level.Info(s.logger).Log("msg", "limit of connections for stack and network reached. exiting")
-				os.Exit(1)
-			}
-
-			level.Error(s.logger).Log("msg", "ssh client exited. restarting")
-			// backoff
-			// TODO: Implement exponential backoff
-			time.Sleep(1 * time.Second)
-
-			// Check keys and cert validity before restart, create new cert if required.
-			// This covers the case where a certificate has become invalid since the last start.
-			// Do not return here: we want to keep trying to connect in case the PDC API
-			// is temporarily unavailable.
-			if s.km != nil {
-				err := s.km.CreateKeys(ctx)
-				if err != nil {
-					level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", err)
-				}
-			}
-
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		err = cmd.Run()
+		if ctx.Err() != nil {
+			return nil // context was canceled
 		}
-	}()
+
+		level.Error(s.logger).Log("msg", "ssh client exited. restarting")
+
+		// Check keys and cert validity before restart, create new cert if required.
+		// This covers the case where a certificate has become invalid since the last start.
+		// Do not return here: we want to keep trying to connect in case the PDC API
+		// is temporarily unavailable.
+		if s.km != nil {
+			err := s.km.CreateKeys(ctx)
+			if err != nil {
+				level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", err)
+			}
+		}
+
+		return fmt.Errorf("ssh client exited")
+	})
 
 	return nil
 }
