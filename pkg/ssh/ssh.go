@@ -47,7 +47,7 @@ func DefaultConfig() *Config {
 		root = ""
 	}
 	return &Config{
-		Port:     2244,
+		Port:     22,
 		LogLevel: 2,
 		PDC:      pdc.Config{},
 		KeyFile:  path.Join(root, ".ssh/grafana_pdc"),

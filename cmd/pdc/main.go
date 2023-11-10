@@ -108,10 +108,8 @@ func run(logger log.Logger, sshConfig *ssh.Config, pdcConfig *pdc.Config) error 
 
 func createURLsFromCluster(cluster string, domain string) (api *url.URL, gateway *url.URL, err error) {
 
-	// apiURL := fmt.Sprintf("https://private-datasource-connect-api-%s.%s", cluster, domain)
-	apiURL := "http://localhost:9181"
-	// gatewayURL := fmt.Sprintf("private-datasource-connect-%s.%s", cluster, domain)
-	gatewayURL := "localhost"
+	apiURL := fmt.Sprintf("https://private-datasource-connect-api-%s.%s", cluster, domain)
+	gatewayURL := fmt.Sprintf("private-datasource-connect-%s.%s", cluster, domain)
 
 	api, err = url.Parse(apiURL)
 	if err != nil {
