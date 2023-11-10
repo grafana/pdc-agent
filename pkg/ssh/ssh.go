@@ -127,7 +127,7 @@ func (s *Client) starting(ctx context.Context) error {
 
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		err = cmd.Run()
+		_ = cmd.Run()
 		if ctx.Err() != nil {
 			return nil // context was canceled
 		}
