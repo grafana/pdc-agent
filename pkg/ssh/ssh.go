@@ -5,12 +5,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"os/exec"
 	"path"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -25,11 +23,8 @@ import (
 
 const (
 	// The exit code sent by the pdc server when the connection limit is reached.
-	ConnectionLimitReachedCode = 10001
+	ConnectionLimitReachedCode = 254
 )
-
-// Create a regex expression that capures the number in a string like: "debug1: Exit status 10001"
-var exitStatusRegexp = regexp.MustCompile(`Exit status (?P<status>10001)`)
 
 // Config represents all configurable properties of the ssh package.
 type Config struct {
@@ -137,6 +132,11 @@ func (s *Client) starting(ctx context.Context) error {
 			return nil // context was canceled
 		}
 
+		if cmd.ProcessState.ExitCode() == ConnectionLimitReachedCode {
+			level.Info(s.logger).Log("msg", "limit of connections for stack and network reached. exiting")
+			os.Exit(1)
+		}
+
 		level.Error(s.logger).Log("msg", "ssh client exited. restarting")
 
 		// Check keys and cert validity before restart, create new cert if required.
@@ -242,26 +242,4 @@ func extractOptionFromFlag(flag string) (string, string, error) {
 		return "", "", errors.New("invalid ssh option format, expecting '-o Name=string'")
 	}
 	return oParts[0], oParts[1], nil
-}
-
-// exitStatusWatcher intercepts writes to a io.Writer and records values that match a regex expression.
-type exitStatusWatcher struct {
-	stdout     io.Writer
-	exitStatus string
-}
-
-func newExitStatusWatcher(stdout io.Writer) *exitStatusWatcher {
-	return &exitStatusWatcher{stdout: stdout}
-}
-
-func (watcher *exitStatusWatcher) Write(p []byte) (n int, err error) {
-	matches := exitStatusRegexp.FindSubmatch(p)
-	if len(matches) > 0 {
-		index := exitStatusRegexp.SubexpIndex("status")
-		if index > -1 {
-			watcher.exitStatus = string(matches[index])
-		}
-	}
-
-	return watcher.stdout.Write(p)
 }
