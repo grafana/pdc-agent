@@ -31,7 +31,7 @@ type Config struct {
 	LogLevel   int
 	PDC        pdc.Config
 	LegacyMode bool
-	// ForceKeyFileOverwrite forces a new ssh key value pair to be generated.
+	// ForceKeyFileOverwrite forces a new ssh key pair to be generated.
 	ForceKeyFileOverwrite bool
 	URL                   *url.URL
 }
