@@ -31,7 +31,9 @@ type Config struct {
 	LogLevel   int
 	PDC        pdc.Config
 	LegacyMode bool
-	URL        *url.URL
+	// ForceKeyFileOverwrite forces a new ssh key value pair to be generated.
+	ForceKeyFileOverwrite bool
+	URL                   *url.URL
 }
 
 // DefaultConfig returns a Config with some sensible defaults set
@@ -60,6 +62,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 		cfg.LogLevel = def.LogLevel
 	}
 	f.Func("ssh-flag", "Additional flags to be passed to ssh. Can be set more than once.", cfg.addSSHFlag)
+	f.BoolVar(&cfg.ForceKeyFileOverwrite, "force-key-file-overwrite", false, "Force a new ssh key pair to be generated")
 }
 
 func (cfg Config) KeyFileDir() string {
