@@ -35,12 +35,25 @@ type Config struct {
 	HostedGrafanaID string
 	URL             *url.URL
 	RetryMax        int
+
+	// The PDC api endpoint used to sign public keys.
+	// It is not a constant only to make it easier to override the endpoint in local development.
+	SignPublicKeyEndpoint string
+
+	// Used for local development.
+	// Contains headers that are included in each http request send to the pdc api.
+	DevHeaders map[string]string
+
+	// Used for local development.
+	// DevNetwork is the network that the agent will connect to.
+	DevNetwork string
 }
 
 func (cfg *Config) RegisterFlags(fs *flag.FlagSet) {
 	var deprecated string
 	fs.StringVar(&cfg.Token, "token", "", "The token to use to authenticate with Grafana Cloud. It must have the pdc-signing:write scope")
 	fs.StringVar(&cfg.HostedGrafanaID, "gcloud-hosted-grafana-id", "", "The ID of the Hosted Grafana instance to connect to")
+	fs.StringVar(&cfg.DevNetwork, "dev-network", "", "the network the agent will connect to")
 	fs.StringVar(&deprecated, "network", "", "DEPRECATED: The name of the PDC network to connect to")
 }
 
@@ -96,6 +109,11 @@ func NewClient(cfg *Config, logger log.Logger) (Client, error) {
 		return nil, errors.New("-api-url cannot be nil")
 	}
 
+	// If the value has not been set for testing.
+	if cfg.SignPublicKeyEndpoint == "" {
+		cfg.SignPublicKeyEndpoint = "/pdc/api/v1/sign-public-key"
+	}
+
 	rc := retryablehttp.NewClient()
 	if cfg.RetryMax != 0 {
 		rc.RetryMax = cfg.RetryMax
@@ -120,7 +138,7 @@ type pdcClient struct {
 }
 
 func (c *pdcClient) SignSSHKey(ctx context.Context, key []byte) (*SigningResponse, error) {
-	resp, err := c.call(ctx, http.MethodPost, "/pdc/api/v1/sign-public-key", nil, map[string]string{
+	resp, err := c.call(ctx, http.MethodPost, c.cfg.SignPublicKeyEndpoint, nil, map[string]string{
 		"publicKey": string(key),
 	})
 	if err != nil {
@@ -170,6 +188,10 @@ func (c *pdcClient) call(ctx context.Context, method, rpath string, params map[s
 	}
 
 	req.Header.Add("Authorization", "Basic "+buf.String())
+
+	for header, value := range c.cfg.DevHeaders {
+		req.Header.Add(header, value)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
