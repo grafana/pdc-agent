@@ -34,7 +34,7 @@ func (mf *mainFlags) RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&mf.LogLevel, "log.level", "info", `"debug", "info", "warn" or "error"`)
 	fs.StringVar(&mf.Cluster, "cluster", "", "the PDC cluster to connect to use")
 	fs.StringVar(&mf.Domain, "domain", "grafana.net", "the domain of the PDC cluster")
-	fs.BoolVar(&mf.DevMode, "dev-mode", false, "run the agent in development mode")
+	fs.BoolVar(&mf.DevMode, "dev-mode", false, "[DEVELOPMENT ONLY] run the agent in development mode")
 }
 
 func main() {
