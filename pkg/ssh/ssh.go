@@ -135,7 +135,7 @@ func (s *Client) starting(ctx context.Context) error {
 			return nil // context was canceled
 		}
 
-		if cmd.ProcessState.ExitCode() == ConnectionLimitReachedCode {
+		if cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == ConnectionLimitReachedCode {
 			level.Info(s.logger).Log("msg", "limit of connections for stack and network reached. exiting")
 			os.Exit(1)
 		}
