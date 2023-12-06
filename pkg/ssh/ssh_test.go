@@ -265,6 +265,53 @@ func TestClient_SSHArgs(t *testing.T) {
 		assert.NotNil(t, err)
 		assert.Equal(t, err.Error(), "invalid ssh option format, expecting '-o Name=string'")
 	})
+
+	t.Run("allow setting the port the agent will listen on", func(t *testing.T) {
+		cfg := ssh.DefaultConfig()
+		cfg.LogLevel = 0
+
+		sshClient := newTestClient(t, cfg, false)
+		result, err := sshClient.SSHFlagsFromConfig()
+		assert.Nil(t, err)
+
+		// The listen port is "0" by default so -R defaults to "0".
+		expected := []string{
+			"-i",
+			cfg.KeyFile,
+			"@localhost",
+			"-p",
+			"22",
+			"-R",
+			"0",
+			"-o", fmt.Sprintf("CertificateFile=%s", cfg.KeyFile+certSuffix),
+			"-o", "ConnectTimeout=1",
+			"-o", "ServerAliveInterval=15",
+			"-o", fmt.Sprintf("UserKnownHostsFile=%s", path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile)),
+		}
+		assert.Equal(t, expected, result)
+
+		// Set the port the agent will listen on.
+		cfg.ListenPort = 8001
+		sshClient = newTestClient(t, cfg, false)
+		result, err = sshClient.SSHFlagsFromConfig()
+		assert.Nil(t, err)
+
+		// -R should include the specified port.
+		expected = []string{
+			"-i",
+			cfg.KeyFile,
+			"@localhost",
+			"-p",
+			"22",
+			"-R",
+			fmt.Sprintf("%d", cfg.ListenPort),
+			"-o", fmt.Sprintf("CertificateFile=%s", cfg.KeyFile+certSuffix),
+			"-o", "ConnectTimeout=1",
+			"-o", "ServerAliveInterval=15",
+			"-o", fmt.Sprintf("UserKnownHostsFile=%s", path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile)),
+		}
+		assert.Equal(t, expected, result)
+	})
 }
 
 type mockPDCClient struct {

@@ -30,10 +30,12 @@ const (
 type Config struct {
 	Args []string // deprecated
 
-	KeyFile    string
-	SSHFlags   []string // Additional flags to be passed to ssh(1). e.g. --ssh-flag="-vvv" --ssh-flag="-L 80:localhost:80"
-	Port       int
-	LogLevel   int
+	KeyFile  string
+	SSHFlags []string // Additional flags to be passed to ssh(1). e.g. --ssh-flag="-vvv" --ssh-flag="-L 80:localhost:80"
+	Port     int
+	LogLevel int
+	// Value passed as the -R option to the ssh command.
+	ListenPort int
 	PDC        pdc.Config
 	LegacyMode bool
 	// ForceKeyFileOverwrite forces a new ssh key pair to be generated.
@@ -67,7 +69,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 		cfg.LogLevel = def.LogLevel
 	}
 	f.Func("ssh-flag", "Additional flags to be passed to ssh. Can be set more than once.", cfg.addSSHFlag)
-	f.BoolVar(&cfg.ForceKeyFileOverwrite, "force-key-file-overwrite", false, "Force a new ssh key pair to be generated")
+	f.BoolVar(&cfg.ForceKeyFileOverwrite, "force-key-file-overwrite", false, "Force a new ssh key pair to be generated.")
+	f.IntVar(&cfg.ListenPort, "listen-port", 0, "The port the agent will listen on.")
 }
 
 func (cfg Config) KeyFileDir() string {
@@ -218,7 +221,7 @@ func (s *Client) SSHFlagsFromConfig() ([]string, error) {
 		user,
 		"-p",
 		fmt.Sprintf("%d", s.cfg.Port),
-		"-R", "0",
+		"-R", fmt.Sprintf("%d", s.cfg.ListenPort),
 	}
 
 	for _, o := range optionsList {
