@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -127,9 +128,9 @@ func (s *Client) starting(ctx context.Context) error {
 	retryOpts := retry.Opts{MaxBackoff: 16 * time.Second, InitialBackoff: 1 * time.Second}
 	go retry.Forever(retryOpts, func() error {
 		cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
-
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+		loggerWriter := newLoggerWriterAdapter(s.logger)
+		cmd.Stdout = loggerWriter
+		cmd.Stderr = loggerWriter
 		_ = cmd.Run()
 		if ctx.Err() != nil {
 			return nil // context was canceled
@@ -245,4 +246,28 @@ func extractOptionFromFlag(flag string) (string, string, error) {
 		return "", "", errors.New("invalid ssh option format, expecting '-o Name=string'")
 	}
 	return oParts[0], oParts[1], nil
+}
+
+type loggerWriterAdapter struct {
+	logger log.Logger
+}
+
+func newLoggerWriterAdapter(logger log.Logger) loggerWriterAdapter {
+	return loggerWriterAdapter{
+		logger: logger,
+	}
+}
+
+func (adapter loggerWriterAdapter) Write(p []byte) (n int, err error) {
+	for _, msg := range bytes.Split(p, []byte{'\r', '\n'}) {
+		if len(msg) == 0 {
+			continue
+		}
+
+		if err := level.Info(adapter.logger).Log("msg", msg); err != nil {
+			return 0, fmt.Errorf("writing log statement")
+		}
+	}
+
+	return len(p), nil
 }
