@@ -37,22 +37,21 @@ func (mf *mainFlags) RegisterFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&mf.DevMode, "dev-mode", false, "[DEVELOPMENT ONLY] run the agent in development mode")
 }
 
+func logLevelToSSHLogLevel(level string) (int, error) {
+	switch level {
+	case "error", "warn", "info":
+		return 0, nil
+	case "debug":
+		return 3, nil
+	default:
+		return -1, fmt.Errorf("invalid log level: %s", level)
+	}
+}
+
 func main() {
 	sshConfig := ssh.DefaultConfig()
 	mf := &mainFlags{}
 	pdcClientCfg := &pdc.Config{}
-
-	sshConfig.Args = os.Args[1:]
-
-	if inLegacyMode() {
-		sshConfig.LegacyMode = true
-		err := runLegacyMode(sshConfig)
-		if err != nil {
-			fmt.Printf("error: %s", err)
-			os.Exit(1)
-		}
-		return
-	}
 
 	usageFn, err := parseFlags(mf.RegisterFlags, sshConfig.RegisterFlags, pdcClientCfg.RegisterFlags)
 	if err != nil {
@@ -60,12 +59,31 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger := setupLogger(mf.LogLevel)
-
 	if mf.PrintHelp {
 		usageFn()
 		return
 	}
+
+	sshConfig.Args = os.Args[1:]
+	sshConfig.LogLevel, err = logLevelToSSHLogLevel(mf.LogLevel)
+
+	if err != nil {
+		usageFn()
+		fmt.Printf("setting log level: %s\n", err)
+		os.Exit(1)
+	}
+
+	if inLegacyMode() {
+		sshConfig.LegacyMode = true
+		err = runLegacyMode(sshConfig)
+		if err != nil {
+			fmt.Printf("error: %s", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	logger := setupLogger(mf.LogLevel)
 
 	apiURL, gatewayURL, err := createURLsFromCluster(mf.Cluster, mf.Domain)
 	if err != nil {
