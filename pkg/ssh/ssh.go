@@ -23,6 +23,11 @@ import (
 	"github.com/grafana/pdc-agent/pkg/retry"
 )
 
+const (
+	// The exit code sent by the pdc server when the connection limit is reached.
+	ConnectionLimitReachedCode = 254
+)
+
 // Config represents all configurable properties of the ssh package.
 type Config struct {
 	Args []string // deprecated
@@ -34,7 +39,9 @@ type Config struct {
 	PDC               pdc.Config
 	LegacyMode        bool
 	SkipSSHValidation bool
-	URL               *url.URL
+	// ForceKeyFileOverwrite forces a new ssh key pair to be generated.
+	ForceKeyFileOverwrite bool
+	URL                   *url.URL
 }
 
 // DefaultConfig returns a Config with some sensible defaults set
@@ -64,6 +71,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	}
 	f.BoolVar(&cfg.SkipSSHValidation, "skip-ssh-validation", false, "Ignore openssh minimum version constraints.")
 	f.Func("ssh-flag", "Additional flags to be passed to ssh. Can be set more than once.", cfg.addSSHFlag)
+	f.BoolVar(&cfg.ForceKeyFileOverwrite, "force-key-file-overwrite", false, "Force a new ssh key pair to be generated")
 }
 
 func (cfg Config) KeyFileDir() string {
@@ -135,6 +143,11 @@ func (s *Client) starting(ctx context.Context) error {
 		_ = cmd.Run()
 		if ctx.Err() != nil {
 			return nil // context was canceled
+		}
+
+		if cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == ConnectionLimitReachedCode {
+			level.Info(s.logger).Log("msg", "limit of connections for stack and network reached. exiting")
+			os.Exit(1)
 		}
 
 		level.Error(s.logger).Log("msg", "ssh client exited. restarting")

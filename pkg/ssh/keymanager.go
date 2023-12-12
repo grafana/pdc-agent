@@ -52,7 +52,7 @@ func NewKeyManager(cfg *Config, logger log.Logger, client pdc.Client) *KeyManage
 func (km *KeyManager) CreateKeys(ctx context.Context) error {
 	level.Info(km.logger).Log("msg", "starting key manager")
 
-	newCertRequired, err := km.ensureKeysExist()
+	newCertRequired, err := km.ensureKeysExist(km.cfg.ForceKeyFileOverwrite)
 	if err != nil {
 		return err
 	}
@@ -102,10 +102,10 @@ func (km KeyManager) ensureCertExists(ctx context.Context, forceCreate bool) err
 // ensureKeysExist checks for the existence of valid SSH keys. If they exist,
 // it does nothing. If they don't, it creates them. It returns a boolean
 // indicating whether new keys were created, and an error.
-func (km KeyManager) ensureKeysExist() (bool, error) {
+func (km KeyManager) ensureKeysExist(forceCreate bool) (bool, error) {
 
 	// check if files already exist
-	r := km.newKeysRequired()
+	r := forceCreate || km.newKeysRequired()
 
 	if !r {
 		return false, nil
@@ -210,6 +210,11 @@ func (km KeyManager) argumentsHashIsDifferent(hash string) bool {
 // argumentsHash returns a hash of the values that end up in the principals field of the certificate.
 func (km KeyManager) argumentsHash() string {
 	value := km.cfg.PDC.HostedGrafanaID
+
+	if km.cfg.PDC.DevNetwork != "" {
+		value = fmt.Sprintf("%s/%s", value, km.cfg.PDC.DevNetwork)
+	}
+
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(value)))
 }
 
