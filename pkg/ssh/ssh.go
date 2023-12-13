@@ -275,9 +275,10 @@ func validateSSHVersion(ctx context.Context, logger log.Logger, sshCmd string) e
 	return RequireSSHVersionAbove9_2(major, minor)
 }
 
+var sshVersionRegexp = regexp.MustCompile(`OpenSSH_(\d+)\.(\d+)`)
+
 func ParseSSHVersion(ctx context.Context, version string) (int, int, error) {
-	re := regexp.MustCompile(`OpenSSH_(\d+)\.(\d+)`)
-	matches := re.FindStringSubmatch(version)
+	matches := sshVersionRegexp.FindStringSubmatch(version)
 	if len(matches) < 3 {
 		return 0, 0, fmt.Errorf("failed to parse OpenSSH version")
 	}
