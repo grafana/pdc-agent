@@ -110,8 +110,8 @@ func (s *Client) starting(ctx context.Context) error {
 	level.Info(s.logger).Log("msg", "starting ssh client")
 
 	if !s.cfg.SkipSSHValidation {
-		if err := validateSSHVersion(ctx, s.SSHCmd); err != nil {
-			return fmt.Errorf("failed to validate ssh version: %w", err)
+		if err := validateSSHVersion(ctx, s.logger, s.SSHCmd); err != nil {
+			return fmt.Errorf("invalid SSH version: %w", err)
 		}
 	}
 
@@ -259,38 +259,42 @@ func extractOptionFromFlag(flag string) (string, string, error) {
 
 // openssh must be running 9.2 or above
 // checks version in format OpenSSH_{MAJOR}.{MINOR}
-func validateSSHVersion(ctx context.Context, sshCmd string) error {
-	version, err := getSSHVersion(ctx, sshCmd)
-	if err != nil {
-		return err
-	}
-	return RequireSSHVersionAbove9_2(version)
-}
-
-func getSSHVersion(ctx context.Context, sshCmd string) (string, error) {
+func validateSSHVersion(ctx context.Context, logger log.Logger, sshCmd string) error {
 	out, err := exec.CommandContext(ctx, sshCmd, "-V").CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("failed to run ssh -V command: %w", err)
+		return fmt.Errorf("failed to run ssh -V command: %w", err)
 	}
-	return string(out), nil
+
+	version := string(out)
+	major, minor, err := ParseSSHVersion(ctx, version)
+	if err != nil {
+		level.Warn(logger).Log("msg", "unable to retrieve SSH version for validation", "err", err)
+		return nil
+	}
+
+	return RequireSSHVersionAbove9_2(major, minor)
 }
 
-func RequireSSHVersionAbove9_2(version string) error {
+func ParseSSHVersion(ctx context.Context, version string) (int, int, error) {
 	re := regexp.MustCompile(`OpenSSH_(\d+)\.(\d+)`)
 	matches := re.FindStringSubmatch(version)
 	if len(matches) < 3 {
-		return fmt.Errorf("failed to parse OpenSSH version")
+		return 0, 0, fmt.Errorf("failed to parse OpenSSH version")
 	}
 
 	major, err := strconv.Atoi(matches[1])
 	if err != nil {
-		return fmt.Errorf("failed to parse OpenSSH major version")
+		return 0, 0, fmt.Errorf("failed to parse OpenSSH major version")
 	}
 	minor, err := strconv.Atoi(matches[2])
 	if err != nil {
-		return fmt.Errorf("failed to parse OpenSSH minor version")
+		return 0, 0, fmt.Errorf("failed to parse OpenSSH minor version")
 	}
 
+	return major, minor, nil
+}
+
+func RequireSSHVersionAbove9_2(major, minor int) error {
 	if major > 9 || (major == 9 && minor >= 2) {
 		return nil
 	}

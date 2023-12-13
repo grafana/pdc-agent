@@ -310,10 +310,14 @@ func TestSSHVersionValidation(t *testing.T) {
 	}
 	for _, tc := range testcases {
 		t.Run(tc.version, func(t *testing.T) {
-			err := ssh.RequireSSHVersionAbove9_2(tc.version)
+			major, minor, err := ssh.ParseSSHVersion(context.Background(), tc.version)
+
 			if tc.valid {
 				require.NoError(t, err)
+				err := ssh.RequireSSHVersionAbove9_2(major, minor)
+				require.NoError(t, err)
 			} else {
+				err := ssh.RequireSSHVersionAbove9_2(major, minor)
 				require.Error(t, err)
 			}
 		})
