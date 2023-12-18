@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -129,9 +130,9 @@ func (s *Client) starting(ctx context.Context) error {
 	retryOpts := retry.Opts{MaxBackoff: 16 * time.Second, InitialBackoff: 1 * time.Second}
 	go retry.Forever(retryOpts, func() error {
 		cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
-
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+		loggerWriter := newLoggerWriterAdapter(s.logger)
+		cmd.Stdout = loggerWriter
+		cmd.Stderr = loggerWriter
 		_ = cmd.Run()
 		if ctx.Err() != nil {
 			return nil // context was canceled
@@ -247,4 +248,35 @@ func extractOptionFromFlag(flag string) (string, string, error) {
 		return "", "", errors.New("invalid ssh option format, expecting '-o Name=string'")
 	}
 	return oParts[0], oParts[1], nil
+}
+
+// Wraps a logger, implements io.Writer and writes to the logger.
+type loggerWriterAdapter struct {
+	logger log.Logger
+}
+
+func newLoggerWriterAdapter(logger log.Logger) loggerWriterAdapter {
+	return loggerWriterAdapter{
+		logger: logger,
+	}
+}
+
+// Implements io.Writer.
+func (adapter loggerWriterAdapter) Write(p []byte) (n int, err error) {
+	// The ssh command output is separated by \r\n and the logger escapes strings.
+	// By default, the logger output would look like this: msg="debug: some message\r\ndebug2: some message\r\n".
+	// We split the messages on \r\n and log each of them at a time to make the output look like this:
+	// msg="debug: some message"
+	// msg="debug2: some message"
+	for _, msg := range bytes.Split(p, []byte{'\r', '\n'}) {
+		if len(msg) == 0 {
+			continue
+		}
+
+		if err := level.Info(adapter.logger).Log("msg", msg); err != nil {
+			return 0, fmt.Errorf("writing log statement")
+		}
+	}
+
+	return len(p), nil
 }
