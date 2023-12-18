@@ -58,11 +58,13 @@ func DefaultConfig() *Config {
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+	var deprecatedInt int
+
 	def := DefaultConfig()
 
 	cfg.SSHFlags = []string{}
 	f.StringVar(&cfg.KeyFile, "ssh-key-file", def.KeyFile, "The path to the SSH key file.")
-	f.IntVar(&cfg.LogLevel, "log-level", def.LogLevel, "The level of log verbosity. The maximum is 3.")
+	f.IntVar(&deprecatedInt, "log-level", def.LogLevel, "[DEPRECATED] Use the log.level flag. The level of log verbosity. The maximum is 3.")
 	// use default log level if invalid
 	if cfg.LogLevel > 3 {
 		cfg.LogLevel = def.LogLevel

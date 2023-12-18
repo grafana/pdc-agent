@@ -55,6 +55,17 @@ func (mf *mainFlags) RegisterFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&mf.DevMode, "dev-mode", false, "[DEVELOPMENT ONLY] run the agent in development mode")
 }
 
+func logLevelToSSHLogLevel(level string) (int, error) {
+	switch level {
+	case "error", "warn", "info":
+		return 0, nil
+	case "debug":
+		return 3, nil
+	default:
+		return -1, fmt.Errorf("invalid log level: %s", level)
+	}
+}
+
 // Tries to get the openssh version. Returns "UNKNOWN" on error.
 func tryGetOpenSSHVersion() string {
 	timeoutCtx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
@@ -79,11 +90,17 @@ func main() {
 	mf := &mainFlags{}
 	pdcClientCfg := &pdc.Config{}
 
-	sshConfig.Args = os.Args[1:]
-
 	usageFn, err := parseFlags(mf.RegisterFlags, sshConfig.RegisterFlags, pdcClientCfg.RegisterFlags)
 	if err != nil {
 		fmt.Println("cannot parse flags")
+		os.Exit(1)
+	}
+
+	sshConfig.Args = os.Args[1:]
+	sshConfig.LogLevel, err = logLevelToSSHLogLevel(mf.LogLevel)
+	if err != nil {
+		usageFn()
+		fmt.Printf("setting log level: %s\n", err)
 		os.Exit(1)
 	}
 
