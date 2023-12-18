@@ -203,6 +203,7 @@ func setupLogger(lvl string) log.Logger {
 	logger := log.NewLogfmtLogger(os.Stdout)
 	logger = level.NewFilter(logger, level.Allow(level.ParseDefault(lvl, level.DebugValue())))
 	logger = log.With(logger, "caller", log.DefaultCaller)
+	logger = log.With(logger, "ts", log.DefaultTimestamp)
 
 	return logger
 }
