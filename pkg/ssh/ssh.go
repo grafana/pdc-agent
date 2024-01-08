@@ -10,7 +10,9 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,12 +33,13 @@ const (
 type Config struct {
 	Args []string // deprecated
 
-	KeyFile    string
-	SSHFlags   []string // Additional flags to be passed to ssh(1). e.g. --ssh-flag="-vvv" --ssh-flag="-L 80:localhost:80"
-	Port       int
-	LogLevel   int
-	PDC        pdc.Config
-	LegacyMode bool
+	KeyFile           string
+	SSHFlags          []string // Additional flags to be passed to ssh(1). e.g. --ssh-flag="-vvv" --ssh-flag="-L 80:localhost:80"
+	Port              int
+	LogLevel          int
+	PDC               pdc.Config
+	LegacyMode        bool
+	SkipSSHValidation bool
 	// ForceKeyFileOverwrite forces a new ssh key pair to be generated.
 	ForceKeyFileOverwrite bool
 	URL                   *url.URL
@@ -69,6 +72,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	if cfg.LogLevel > 3 {
 		cfg.LogLevel = def.LogLevel
 	}
+	f.BoolVar(&cfg.SkipSSHValidation, "skip-ssh-validation", false, "Ignore openssh minimum version constraints.")
 	f.Func("ssh-flag", "Additional flags to be passed to ssh. Can be set more than once.", cfg.addSSHFlag)
 	f.BoolVar(&cfg.ForceKeyFileOverwrite, "force-key-file-overwrite", false, "Force a new ssh key pair to be generated")
 }
@@ -107,6 +111,12 @@ func NewClient(cfg *Config, logger log.Logger, km *KeyManager) *Client {
 
 func (s *Client) starting(ctx context.Context) error {
 	level.Info(s.logger).Log("msg", "starting ssh client")
+
+	if !s.cfg.SkipSSHValidation {
+		if err := validateSSHVersion(ctx, s.logger, s.SSHCmd); err != nil {
+			return fmt.Errorf("invalid SSH version: %w", err)
+		}
+	}
 
 	// check keys and cert validity before start, create new cert if required
 	// This will exit if it fails, rather than endlessly retrying to sign keys.
@@ -279,4 +289,49 @@ func (adapter loggerWriterAdapter) Write(p []byte) (n int, err error) {
 	}
 
 	return len(p), nil
+}
+
+// openssh must be running 9.2 or above
+// checks version in format OpenSSH_{MAJOR}.{MINOR}
+func validateSSHVersion(ctx context.Context, logger log.Logger, sshCmd string) error {
+	out, err := exec.CommandContext(ctx, sshCmd, "-V").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to run ssh -V command: %w", err)
+	}
+
+	version := string(out)
+	major, minor, err := ParseSSHVersion(version)
+	if err != nil {
+		level.Warn(logger).Log("msg", "unable to retrieve SSH version for validation", "err", err)
+		return nil
+	}
+
+	return RequireSSHVersionAbove9_2(major, minor)
+}
+
+var sshVersionRegexp = regexp.MustCompile(`OpenSSH_(\d+)\.(\d+)`)
+
+func ParseSSHVersion(version string) (int, int, error) {
+	matches := sshVersionRegexp.FindStringSubmatch(version)
+	if len(matches) < 3 {
+		return 0, 0, fmt.Errorf("failed to parse OpenSSH version")
+	}
+
+	major, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to parse OpenSSH major version")
+	}
+	minor, err := strconv.Atoi(matches[2])
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to parse OpenSSH minor version")
+	}
+
+	return major, minor, nil
+}
+
+func RequireSSHVersionAbove9_2(major, minor int) error {
+	if major > 9 || (major == 9 && minor >= 2) {
+		return nil
+	}
+	return fmt.Errorf("OpenSSH version must be greater or equal to 9.2, current version: %d.%d", major, minor)
 }
