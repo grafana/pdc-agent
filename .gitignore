@@ -16,3 +16,9 @@
 
 dist/
 main
+
+# IDE
+.idea/
+*.iml
+.vscode/
+!.vscode/launch.json
