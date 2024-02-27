@@ -26,7 +26,8 @@ import (
 
 const (
 	// The exit code sent by the pdc server when the connection limit is reached.
-	ConnectionLimitReachedCode = 254
+	ConnectionLimitReachedCode  = 254
+	ConnectionAlreadyExistsCode = 253
 )
 
 // Config represents all configurable properties of the ssh package.
@@ -146,6 +147,11 @@ func (s *Client) starting(ctx context.Context) error {
 		_ = cmd.Run()
 		if ctx.Err() != nil {
 			return nil // context was canceled
+		}
+
+		if cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == ConnectionAlreadyExistsCode {
+			level.Debug(s.logger).Log("msg", "connection already exists. retrying a different server")
+			return retry.ResetBackoffError{}
 		}
 
 		if cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == ConnectionLimitReachedCode {
