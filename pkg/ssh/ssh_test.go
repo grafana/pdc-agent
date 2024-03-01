@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/pdc-agent/pkg/pdc"
 	"github.com/grafana/pdc-agent/pkg/ssh"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
 )
 
@@ -110,6 +111,8 @@ func newTestClient(t *testing.T, cfg *ssh.Config, mockCmd bool) *ssh.Client {
 		cfg.URL = mustParseURL("localhost")
 	}
 
+	cfg.SkipSSHValidation = true
+
 	dir := t.TempDir()
 	cfg.KeyFile = path.Join(dir, "test_cert")
 
@@ -143,7 +146,7 @@ func TestClient_SSHArgs(t *testing.T) {
 		result, err := sshClient.SSHFlagsFromConfig()
 
 		assert.Nil(t, err)
-		assert.Equal(t, strings.Split(fmt.Sprintf("-i %s 123@host.grafana.net -p 22 -R 0 -o CertificateFile=%s -o ConnectTimeout=1 -o ServerAliveInterval=15 -o UserKnownHostsFile=%s -vv", cfg.KeyFile, cfg.KeyFile+"-cert.pub", path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile)), " "), result)
+		assert.Equal(t, strings.Split(fmt.Sprintf("-i %s 123@host.grafana.net -p 22 -R 0 -o CertificateFile=%s -o ConnectTimeout=1 -o ServerAliveInterval=15 -o UserKnownHostsFile=%s -vv", cfg.KeyFile, cfg.KeyFile+certSuffix, path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile)), " "), result)
 	})
 
 	t.Run("legacy args (deprecated)", func(t *testing.T) {
@@ -188,7 +191,7 @@ func TestClient_SSHArgs(t *testing.T) {
 			"22",
 			"-R",
 			"0",
-			"-o", fmt.Sprintf("CertificateFile=%s", cfg.KeyFile+"-cert.pub"),
+			"-o", fmt.Sprintf("CertificateFile=%s", cfg.KeyFile+certSuffix),
 			"-o", "ConnectTimeout=3",
 			"-o", "PermitRemoteOpen=host:123 host:456",
 			"-o", "ServerAliveInterval=15",
@@ -217,7 +220,7 @@ func TestClient_SSHArgs(t *testing.T) {
 			"22",
 			"-R",
 			"0",
-			"-o", fmt.Sprintf("CertificateFile=%s", cfg.KeyFile+"-cert.pub"),
+			"-o", fmt.Sprintf("CertificateFile=%s", cfg.KeyFile+certSuffix),
 			"-o", "ConnectTimeout=1",
 			"-o", "ServerAliveInterval=15",
 			"-o", fmt.Sprintf("UserKnownHostsFile=%s", path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile)),
@@ -238,7 +241,7 @@ func TestClient_SSHArgs(t *testing.T) {
 			"22",
 			"-R",
 			"0",
-			"-o", fmt.Sprintf("CertificateFile=%s", cfg.KeyFile+"-cert.pub"),
+			"-o", fmt.Sprintf("CertificateFile=%s", cfg.KeyFile+certSuffix),
 			"-o", "ConnectTimeout=1",
 			"-o", "ServerAliveInterval=15",
 			"-o", fmt.Sprintf("UserKnownHostsFile=%s", path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile)),
@@ -265,6 +268,61 @@ func TestClient_SSHArgs(t *testing.T) {
 		assert.NotNil(t, err)
 		assert.Equal(t, err.Error(), "invalid ssh option format, expecting '-o Name=string'")
 	})
+}
+
+func TestSSHVersionValidation(t *testing.T) {
+	testcases := []struct {
+		version string
+		valid   bool
+	}{
+		{
+			version: "TestSSH_9.2",
+			valid:   false,
+		},
+		{
+			version: "OpenSSH_test",
+			valid:   false,
+		},
+		{
+			version: "OpenSSH_8.9",
+			valid:   false,
+		},
+		{
+			version: "OpenSSH_9.1 test ssh metadata",
+			valid:   false,
+		},
+		{
+			version: "OpenSSH_9.2, test ssh metadata",
+			valid:   true,
+		},
+		{
+			version: "OpenSSH_9.200p1, test ssh metadata",
+			valid:   true,
+		},
+		{
+			version: "OpenSSH_9.2p1",
+			valid:   true,
+		},
+		{
+			version: "OpenSSH_19.1p1, test ssh metadata",
+			valid:   true,
+		},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.version, func(t *testing.T) {
+			major, minor, err := ssh.ParseSSHVersion(tc.version)
+
+			if tc.valid {
+				require.NoError(t, err)
+				err := ssh.RequireSSHVersionAbove9_2(major, minor)
+				require.NoError(t, err)
+			} else {
+				err := ssh.RequireSSHVersionAbove9_2(major, minor)
+				require.Error(t, err)
+			}
+		})
+	}
+
 }
 
 type mockPDCClient struct {

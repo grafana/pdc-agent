@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -9,7 +10,9 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,19 +21,28 @@ import (
 
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/pdc-agent/pkg/pdc"
+	"github.com/grafana/pdc-agent/pkg/retry"
+)
+
+const (
+	// The exit code sent by the pdc server when the connection limit is reached.
+	ConnectionLimitReachedCode = 254
 )
 
 // Config represents all configurable properties of the ssh package.
 type Config struct {
 	Args []string // deprecated
 
-	KeyFile    string
-	SSHFlags   []string // Additional flags to be passed to ssh(1). e.g. --ssh-flag="-vvv" --ssh-flag="-L 80:localhost:80"
-	Port       int
-	LogLevel   int
-	PDC        pdc.Config
-	LegacyMode bool
-	URL        *url.URL
+	KeyFile           string
+	SSHFlags          []string // Additional flags to be passed to ssh(1). e.g. --ssh-flag="-vvv" --ssh-flag="-L 80:localhost:80"
+	Port              int
+	LogLevel          int
+	PDC               pdc.Config
+	LegacyMode        bool
+	SkipSSHValidation bool
+	// ForceKeyFileOverwrite forces a new ssh key pair to be generated.
+	ForceKeyFileOverwrite bool
+	URL                   *url.URL
 }
 
 // DefaultConfig returns a Config with some sensible defaults set
@@ -49,16 +61,20 @@ func DefaultConfig() *Config {
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+	var deprecatedInt int
+
 	def := DefaultConfig()
 
 	cfg.SSHFlags = []string{}
 	f.StringVar(&cfg.KeyFile, "ssh-key-file", def.KeyFile, "The path to the SSH key file.")
-	f.IntVar(&cfg.LogLevel, "log-level", def.LogLevel, "The level of log verbosity. The maximum is 3.")
+	f.IntVar(&deprecatedInt, "log-level", def.LogLevel, "[DEPRECATED] Use the log.level flag. The level of log verbosity. The maximum is 3.")
 	// use default log level if invalid
 	if cfg.LogLevel > 3 {
 		cfg.LogLevel = def.LogLevel
 	}
+	f.BoolVar(&cfg.SkipSSHValidation, "skip-ssh-validation", false, "Ignore openssh minimum version constraints.")
 	f.Func("ssh-flag", "Additional flags to be passed to ssh. Can be set more than once.", cfg.addSSHFlag)
+	f.BoolVar(&cfg.ForceKeyFileOverwrite, "force-key-file-overwrite", false, "Force a new ssh key pair to be generated")
 }
 
 func (cfg Config) KeyFileDir() string {
@@ -96,6 +112,12 @@ func NewClient(cfg *Config, logger log.Logger, km *KeyManager) *Client {
 func (s *Client) starting(ctx context.Context) error {
 	level.Info(s.logger).Log("msg", "starting ssh client")
 
+	if !s.cfg.SkipSSHValidation {
+		if err := validateSSHVersion(ctx, s.logger, s.SSHCmd); err != nil {
+			return fmt.Errorf("invalid SSH version: %w", err)
+		}
+	}
+
 	// check keys and cert validity before start, create new cert if required
 	// This will exit if it fails, rather than endlessly retrying to sign keys.
 	if s.km != nil {
@@ -115,35 +137,37 @@ func (s *Client) starting(ctx context.Context) error {
 	}
 	level.Debug(s.logger).Log("msg", fmt.Sprintf("parsed flags: %s", flags))
 
-	go func() {
-		for {
-			cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
-
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			_ = cmd.Run()
-			if ctx.Err() != nil {
-				break // context was canceled
-			}
-
-			level.Error(s.logger).Log("msg", "ssh client exited. restarting")
-			// backoff
-			// TODO: Implement exponential backoff
-			time.Sleep(1 * time.Second)
-
-			// Check keys and cert validity before restart, create new cert if required.
-			// This covers the case where a certificate has become invalid since the last start.
-			// Do not return here: we want to keep trying to connect in case the PDC API
-			// is temporarily unavailable.
-			if s.km != nil {
-				err := s.km.CreateKeys(ctx)
-				if err != nil {
-					level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", err)
-				}
-			}
-
+	retryOpts := retry.Opts{MaxBackoff: 16 * time.Second, InitialBackoff: 1 * time.Second}
+	go retry.Forever(retryOpts, func() error {
+		cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
+		loggerWriter := newLoggerWriterAdapter(s.logger)
+		cmd.Stdout = loggerWriter
+		cmd.Stderr = loggerWriter
+		_ = cmd.Run()
+		if ctx.Err() != nil {
+			return nil // context was canceled
 		}
-	}()
+
+		if cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == ConnectionLimitReachedCode {
+			level.Info(s.logger).Log("msg", "limit of connections for stack and network reached. exiting")
+			os.Exit(1)
+		}
+
+		level.Error(s.logger).Log("msg", "ssh client exited. restarting")
+
+		// Check keys and cert validity before restart, create new cert if required.
+		// This covers the case where a certificate has become invalid since the last start.
+		// Do not return here: we want to keep trying to connect in case the PDC API
+		// is temporarily unavailable.
+		if s.km != nil {
+			err := s.km.CreateKeys(ctx)
+			if err != nil {
+				level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", err)
+			}
+		}
+
+		return fmt.Errorf("ssh client exited")
+	})
 
 	return nil
 }
@@ -234,4 +258,80 @@ func extractOptionFromFlag(flag string) (string, string, error) {
 		return "", "", errors.New("invalid ssh option format, expecting '-o Name=string'")
 	}
 	return oParts[0], oParts[1], nil
+}
+
+// Wraps a logger, implements io.Writer and writes to the logger.
+type loggerWriterAdapter struct {
+	logger log.Logger
+}
+
+func newLoggerWriterAdapter(logger log.Logger) loggerWriterAdapter {
+	return loggerWriterAdapter{
+		logger: logger,
+	}
+}
+
+// Implements io.Writer.
+func (adapter loggerWriterAdapter) Write(p []byte) (n int, err error) {
+	// The ssh command output is separated by \r\n and the logger escapes strings.
+	// By default, the logger output would look like this: msg="debug: some message\r\ndebug2: some message\r\n".
+	// We split the messages on \r\n and log each of them at a time to make the output look like this:
+	// msg="debug: some message"
+	// msg="debug2: some message"
+	for _, msg := range bytes.Split(p, []byte{'\r', '\n'}) {
+		if len(msg) == 0 {
+			continue
+		}
+
+		if err := level.Info(adapter.logger).Log("msg", msg); err != nil {
+			return 0, fmt.Errorf("writing log statement")
+		}
+	}
+
+	return len(p), nil
+}
+
+// openssh must be running 9.2 or above
+// checks version in format OpenSSH_{MAJOR}.{MINOR}
+func validateSSHVersion(ctx context.Context, logger log.Logger, sshCmd string) error {
+	out, err := exec.CommandContext(ctx, sshCmd, "-V").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to run ssh -V command: %w", err)
+	}
+
+	version := string(out)
+	major, minor, err := ParseSSHVersion(version)
+	if err != nil {
+		level.Warn(logger).Log("msg", "unable to retrieve SSH version for validation", "err", err)
+		return nil
+	}
+
+	return RequireSSHVersionAbove9_2(major, minor)
+}
+
+var sshVersionRegexp = regexp.MustCompile(`OpenSSH_(\d+)\.(\d+)`)
+
+func ParseSSHVersion(version string) (int, int, error) {
+	matches := sshVersionRegexp.FindStringSubmatch(version)
+	if len(matches) < 3 {
+		return 0, 0, fmt.Errorf("failed to parse OpenSSH version")
+	}
+
+	major, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to parse OpenSSH major version")
+	}
+	minor, err := strconv.Atoi(matches[2])
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to parse OpenSSH minor version")
+	}
+
+	return major, minor, nil
+}
+
+func RequireSSHVersionAbove9_2(major, minor int) error {
+	if major > 9 || (major == 9 && minor >= 2) {
+		return nil
+	}
+	return fmt.Errorf("OpenSSH version must be greater or equal to 9.2, current version: %d.%d", major, minor)
 }

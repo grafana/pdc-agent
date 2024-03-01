@@ -1,6 +1,6 @@
 module github.com/grafana/pdc-agent
 
-go 1.19
+go 1.21
 
 require (
 	github.com/go-kit/log v0.2.1
@@ -10,6 +10,7 @@ require (
 	github.com/prometheus/client_golang v1.16.0
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/crypto v0.11.0
+	pgregory.net/rapid v1.1.0
 )
 
 require (
