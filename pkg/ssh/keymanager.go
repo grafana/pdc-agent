@@ -164,10 +164,16 @@ func (km KeyManager) newCertRequired() bool {
 		level.Info(km.logger).Log("msg", "new certificate required: certificate is incorrect format")
 		return true
 	}
+
 	now := uint64(time.Now().Unix())
 
 	if now > cert.ValidBefore {
 		level.Info(km.logger).Log("msg", "new certificate required: certificate validity has expired")
+		return true
+	}
+
+	if now > (cert.ValidBefore - uint64(km.cfg.CertExpiryWindow.Seconds())) {
+		level.Info(km.logger).Log("msg", "new certificate required: certificate is about to expire")
 		return true
 	}
 

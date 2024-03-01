@@ -28,6 +28,8 @@ const (
 	// The exit code sent by the pdc server when the connection limit is reached.
 	ConnectionLimitReachedCode  = 254
 	ConnectionAlreadyExistsCode = 253
+
+	RenewCertInterval = 5 * time.Minute
 )
 
 // Config represents all configurable properties of the ssh package.
@@ -43,7 +45,9 @@ type Config struct {
 	SkipSSHValidation bool
 	// ForceKeyFileOverwrite forces a new ssh key pair to be generated.
 	ForceKeyFileOverwrite bool
-	URL                   *url.URL
+	// CertExpiryWindow is the time before the certificate expires to renew it.
+	CertExpiryWindow time.Duration
+	URL              *url.URL
 }
 
 // DefaultConfig returns a Config with some sensible defaults set
@@ -76,6 +80,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.SkipSSHValidation, "skip-ssh-validation", false, "Ignore openssh minimum version constraints.")
 	f.Func("ssh-flag", "Additional flags to be passed to ssh. Can be set more than once.", cfg.addSSHFlag)
 	f.BoolVar(&cfg.ForceKeyFileOverwrite, "force-key-file-overwrite", false, "Force a new ssh key pair to be generated")
+	f.DurationVar(&cfg.CertExpiryWindow, "cert-expiry-window", 5*time.Minute, "The time before the certificate expires to renew it. The default is 5 minutes.")
 }
 
 func (cfg Config) KeyFileDir() string {
@@ -110,6 +115,25 @@ func NewClient(cfg *Config, logger log.Logger, km *KeyManager) *Client {
 	return client
 }
 
+func (s *Client) renewCert(ctx context.Context) {
+	ticker := time.NewTicker(RenewCertInterval)
+
+	for {
+		select {
+		case <-ticker.C:
+			level.Debug(s.logger).Log("msg", "check certificate expiration time, renew if needed")
+
+			if s.km != nil {
+				if err := s.km.ensureCertExists(ctx, false); err != nil {
+					level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", err)
+				}
+			}
+		case <-ctx.Done():
+			ticker.Stop()
+		}
+	}
+}
+
 func (s *Client) starting(ctx context.Context) error {
 	level.Info(s.logger).Log("msg", "starting ssh client")
 
@@ -137,6 +161,8 @@ func (s *Client) starting(ctx context.Context) error {
 		return err
 	}
 	level.Debug(s.logger).Log("msg", fmt.Sprintf("parsed flags: %s", flags))
+
+	go s.renewCert(ctx)
 
 	retryOpts := retry.Opts{MaxBackoff: 16 * time.Second, InitialBackoff: 1 * time.Second}
 	go retry.Forever(retryOpts, func() error {
