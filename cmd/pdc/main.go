@@ -136,6 +136,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	pdcClientCfg.Version = version
 	pdcClientCfg.URL = apiURL
 	sshConfig.PDC = *pdcClientCfg
 	sshConfig.URL = gatewayURL

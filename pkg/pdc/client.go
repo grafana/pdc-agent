@@ -36,6 +36,9 @@ type Config struct {
 	URL             *url.URL
 	RetryMax        int
 
+	// The version of pdc-agent thats running, defined by goreleaser during the build process.
+	Version string
+
 	// The PDC api endpoint used to sign public keys.
 	// It is not a constant only to make it easier to override the endpoint in local development.
 	SignPublicKeyEndpoint string
@@ -123,7 +126,7 @@ func NewClient(cfg *Config, logger log.Logger) (Client, error) {
 	rc.CheckRetry = retryablehttp.ErrorPropagatedRetryPolicy
 	hc := rc.StandardClient()
 
-	hc.Transport = httpclient.UserAgentTransport(hc.Transport)
+	hc.Transport = httpclient.UserAgentTransport(hc.Transport, cfg.Version)
 
 	return &pdcClient{
 		cfg:        cfg,
