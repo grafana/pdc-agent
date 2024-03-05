@@ -150,7 +150,7 @@ func (s *Client) starting(ctx context.Context) error {
 		}
 
 		if cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == ConnectionAlreadyExistsCode {
-			level.Debug(s.logger).Log("msg", "connection already exists. retrying a different server")
+			level.Debug(s.logger).Log("msg", "server already had a connection for this tunnelID. trying a different server")
 			return retry.ResetBackoffError{}
 		}
 
