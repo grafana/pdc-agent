@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"sync"
 	"testing"
 	"time"
 
@@ -80,6 +81,7 @@ type testKeyManagerOutput struct {
 	pdcCfg pdc.Config
 	sshCfg *ssh.Config
 	km     *ssh.KeyManager
+	pdc    *mockPDC
 }
 
 // Instantiates and returns a KeyManager that can be used for testing.
@@ -90,11 +92,13 @@ func testKeyManager(t *testing.T) testKeyManagerOutput {
 	pdcCfg := pdc.Config{HostedGrafanaID: "1"}
 	sshCfg := ssh.DefaultConfig()
 	sshCfg.PDC = pdcCfg
+	sshCfg.CertCheckCertExpiryPeriod = 1 * time.Second
+	sshCfg.CertExpiryWindow = 1 * time.Minute
 
 	sshCfg.KeyFile = path.Join(t.TempDir(), "testkey")
 
-	url, _ := mockPDC(t, http.MethodPost, "/pdc/api/v1/sign-public-key", http.StatusOK)
-	pdcCfg.URL = url
+	m := newMockPDC(t, http.MethodPost, "/pdc/api/v1/sign-public-key", http.StatusOK)
+	pdcCfg.URL = m.URL()
 
 	logger := log.NewNopLogger()
 
@@ -105,6 +109,7 @@ func testKeyManager(t *testing.T) testKeyManagerOutput {
 		pdcCfg: pdcCfg,
 		sshCfg: sshCfg,
 		km:     ssh.NewKeyManager(sshCfg, logger, client),
+		pdc:    m,
 	}
 }
 
@@ -118,7 +123,7 @@ func TestKeyManager_CreateKeys(t *testing.T) {
 		sut := testKeyManager(t)
 
 		// The first call to CreateKeys will create a new ssh pair.
-		assert.NoError(t, sut.km.CreateKeys(ctx))
+		assert.NoError(t, sut.km.CreateKeys(ctx, false))
 
 		// Read the private key that was just created.
 		key1, err := os.ReadFile(sut.sshCfg.KeyFile)
@@ -127,7 +132,7 @@ func TestKeyManager_CreateKeys(t *testing.T) {
 
 		// The second call to CreateKeys will see that a ssh pair already exists
 		// and it'll not create a new one.
-		assert.NoError(t, sut.km.CreateKeys(ctx))
+		assert.NoError(t, sut.km.CreateKeys(ctx, false))
 
 		// Read the key again, it should be the same key we read before.
 		key2, err := os.ReadFile(sut.sshCfg.KeyFile)
@@ -148,7 +153,7 @@ func TestKeyManager_CreateKeys(t *testing.T) {
 		sut.sshCfg.ForceKeyFileOverwrite = true
 
 		// The first call to CreateKeys will create a new ssh pair.
-		assert.NoError(t, sut.km.CreateKeys(ctx))
+		assert.NoError(t, sut.km.CreateKeys(ctx, sut.sshCfg.ForceKeyFileOverwrite))
 
 		// Read the private key that was just created.
 		key1, err := os.ReadFile(sut.sshCfg.KeyFile)
@@ -156,7 +161,7 @@ func TestKeyManager_CreateKeys(t *testing.T) {
 		assert.NoError(t, err)
 
 		// The second call to CreateKeys will create a new ssh key pair even though a key pair already exists.
-		assert.NoError(t, sut.km.CreateKeys(ctx))
+		assert.NoError(t, sut.km.CreateKeys(ctx, sut.sshCfg.ForceKeyFileOverwrite))
 
 		// Read the private key that was just created.
 		key2, err := os.ReadFile(sut.sshCfg.KeyFile)
@@ -350,8 +355,8 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			if tc.apiResponseCode == 0 {
 				tc.apiResponseCode = 200
 			}
-			url, called := mockPDC(t, http.MethodPost, "/pdc/api/v1/sign-public-key", tc.apiResponseCode)
-			pdcCfg.URL = url
+			m := newMockPDC(t, http.MethodPost, "/pdc/api/v1/sign-public-key", tc.apiResponseCode)
+			pdcCfg.URL = m.URL()
 
 			// allow test case to modify cfg and add files to frw
 			if tc.setupFn != nil {
@@ -364,7 +369,7 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 			require.Nil(t, err)
 
 			km := ssh.NewKeyManager(cfg, logger, client)
-			err = km.CreateKeys(ctx)
+			err = km.CreateKeys(ctx, false)
 			if tc.wantErr {
 				assert.Error(t, err)
 				return
@@ -372,7 +377,9 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 
 			require.Nil(t, err)
 
-			assert.Equal(t, tc.wantSigningRequest, *called)
+			if tc.wantSigningRequest {
+				assert.True(t, m.CalledCount() > 0)
+			}
 
 			if tc.assertFn != nil {
 				tc.assertFn(t, cfg)
@@ -381,35 +388,100 @@ func TestKeyManager_EnsureKeysExist(t *testing.T) {
 	}
 }
 
-func mockPDC(t *testing.T, method, path string, code int) (u *url.URL, called *bool) {
+func TestBackgroundRefresh(t *testing.T) {
+	t.Run("refresh is 0, do not refresh", func(t *testing.T) {
+		ctx := context.Background()
+		sut := testKeyManager(t)
+		sut.sshCfg.CertCheckCertExpiryPeriod = 0
+
+		require.Nil(t, sut.km.Start(ctx))
+		<-time.After(2 * time.Second)
+
+		// key signing is only called once (at start)
+		assert.Equal(t, 1, sut.pdc.CalledCount())
+	})
+
+	t.Run("new cert requested whenever cert is within expiry window", func(t *testing.T) {
+		ctx := context.Background()
+		// given a keymanager with a cert that is always expired
+		sut := testKeyManager(t)
+		sut.sshCfg.CertCheckCertExpiryPeriod = 100 * time.Millisecond
+		require.Nil(t, sut.km.Start(ctx))
+
+		// leave enough time for the ticker to tick 9 times
+		<-time.After(910 * time.Millisecond)
+
+		// key signing is called a total of 10 times (once at start)
+		assert.Equal(t, 10, sut.pdc.CalledCount())
+
+	})
+}
+
+type mockPDC struct {
+	method string
+	path   string
+	code   int
+	ts     *httptest.Server
+	t      *testing.T
+
+	mu          sync.Mutex
+	calledCount int
+}
+
+func (m *mockPDC) Reset() {
+	m.calledCount = 0
+}
+
+func (m *mockPDC) URL() *url.URL {
+	url, _ := url.Parse(m.ts.URL)
+	return url
+}
+
+func (m *mockPDC) CalledCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.calledCount
+}
+
+func (m *mockPDC) handlerFunc(w http.ResponseWriter, r *http.Request) {
+	assert.Equal(m.t, m.method, r.Method)
+	assert.Equal(m.t, m.path, r.URL.Path)
+
+	m.mu.Lock()
+	m.calledCount++
+	m.mu.Unlock()
+
+	resp := struct {
+		KnownHosts  string `json:"known_hosts"`
+		Certificate string `json:"certificate"`
+	}{
+		KnownHosts:  knownHosts,
+		Certificate: expectedCert,
+	}
+	enc, err := json.Marshal(resp)
+	assert.NoError(m.t, err)
+
+	w.WriteHeader(m.code)
+	_, err = w.Write(enc)
+	assert.NoError(m.t, err)
+
+}
+
+func newMockPDC(t *testing.T, method, path string, code int) *mockPDC {
 	t.Helper()
 
-	called = new(bool)
+	m := &mockPDC{
+		calledCount: 0,
+		method:      method,
+		code:        code,
+		path:        path,
+		t:           t,
+	}
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, method, r.Method)
-		assert.Equal(t, path, r.URL.Path)
-		*called = true
-
-		resp := struct {
-			KnownHosts  string `json:"known_hosts"`
-			Certificate string `json:"certificate"`
-		}{
-			KnownHosts:  knownHosts,
-			Certificate: expectedCert,
-		}
-		enc, err := json.Marshal(resp)
-		assert.NoError(t, err)
-
-		w.WriteHeader(code)
-		_, err = w.Write(enc)
-		assert.NoError(t, err)
-
-	}))
+	ts := httptest.NewServer(http.HandlerFunc(m.handlerFunc))
+	m.ts = ts
 	t.Cleanup(ts.Close)
-
-	u, _ = url.Parse(ts.URL)
-	return u, called
+	return m
 }
 
 func mustParseCert(t *testing.T) []byte {
