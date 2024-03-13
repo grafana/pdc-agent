@@ -84,6 +84,8 @@ func (km *KeyManager) backgroundCertRefresh(ctx context.Context) {
 	}
 }
 
+// CreateKeys checks that the SSH public key, private key, certificate and known_hosts
+// files for existence and validity, and generates new ones if required.
 func (km *KeyManager) CreateKeys(ctx context.Context, forceNewKeys bool) error {
 	newCertRequired, err := km.ensureKeysExist(forceNewKeys)
 	if err != nil {

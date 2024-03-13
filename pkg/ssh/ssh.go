@@ -46,7 +46,9 @@ type Config struct {
 	// ForceKeyFileOverwrite forces a new ssh key pair to be generated.
 	ForceKeyFileOverwrite bool
 	// CertExpiryWindow is the time before the certificate expires to renew it.
-	CertExpiryWindow          time.Duration
+	CertExpiryWindow time.Duration
+	// CertCheckCertExpiryPeriod is how often to check that the current certificate
+	// is valid and regenerate it if necessary.
 	CertCheckCertExpiryPeriod time.Duration
 	URL                       *url.URL
 }
