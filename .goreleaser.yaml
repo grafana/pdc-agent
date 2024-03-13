@@ -13,6 +13,11 @@ builds:
       - linux
       - windows
       - darwin
+    goarch:
+      - "386"
+      - amd64
+      - arm64
+
 
 archives:
   - format: tar.gz
@@ -38,8 +43,34 @@ dockers:
       - pdc
     dockerfile: ./cmd/pdc/Dockerfile
     image_templates:
-    - grafana/{{ .ProjectName }}:latest
-    - grafana/{{ .ProjectName }}:{{ .Version }}
+      - grafana/{{ .ProjectName }}:latest
+      - grafana/{{ .ProjectName }}:{{ .Version }}
+      - grafana/{{ .ProjectName }}:{{ .Version }}-amd64
+    build_flag_templates:
+      - "--platform=linux/amd64"
+  - use: buildx
+    goos: linux
+    goarch: arm64
+    ids:
+      - pdc
+    dockerfile: ./cmd/pdc/Dockerfile
+    image_templates:
+      - grafana/{{ .ProjectName }}:latest-arm64
+      - grafana/{{ .ProjectName }}:{{ .Version }}-arm64
+    build_flag_templates:
+      - "--platform=linux/arm64"
+
+docker_manifests:
+- name_template: 'grafana/{{ .ProjectName }}:{{ .Version }}'
+  image_templates:
+  - 'grafana/{{ .ProjectName }}:{{ .Version }}-amd64'
+  - 'grafana/{{ .ProjectName }}:{{ .Version }}-arm64'
+- name_template: 'grafana/{{ .ProjectName }}:latest'
+  image_templates:
+  - 'grafana/{{ .ProjectName }}:latest-amd64'
+  - 'grafana/{{ .ProjectName }}:latest-arm64'
+
+
 
 
 checksum:
