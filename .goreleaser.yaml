@@ -9,10 +9,12 @@ builds:
       - CGO_ENABLED=0
     main: ./cmd/pdc
     binary: pdc
+    # These are the defaults
     goos:
       - linux
       - windows
       - darwin
+    # These are the defaults
     goarch:
       - "386"
       - amd64
