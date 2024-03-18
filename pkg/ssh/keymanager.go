@@ -49,17 +49,52 @@ func NewKeyManager(cfg *Config, logger log.Logger, client pdc.Client) *KeyManage
 	return &km
 }
 
-func (km *KeyManager) CreateKeys(ctx context.Context) error {
-	level.Info(km.logger).Log("msg", "starting key manager")
+// Start ensures valid keys and certs exist, and optionally starts a background
+// certificate refresh goroutine.
+func (km *KeyManager) Start(ctx context.Context) error {
+	level.Debug(km.logger).Log("msg", "starting key manager")
+	err := km.CreateKeys(ctx, km.cfg.ForceKeyFileOverwrite)
+	if err != nil {
+		return err
+	}
 
-	newCertRequired, err := km.ensureKeysExist(km.cfg.ForceKeyFileOverwrite)
+	go km.backgroundCertRefresh(ctx)
+	return nil
+}
+
+func (km *KeyManager) backgroundCertRefresh(ctx context.Context) {
+	if km.cfg.CertCheckCertExpiryPeriod == 0 {
+		level.Debug(km.logger).Log("msg", "CertCheckCertExpiryPeriod is 0, will not refresh certificate in the background")
+		return
+	}
+
+	ticker := time.NewTicker(km.cfg.CertCheckCertExpiryPeriod)
+	for {
+		select {
+		case <-ticker.C:
+			level.Debug(km.logger).Log("msg", "check certificate expiration time, renew if needed")
+
+			if err := km.ensureCertExists(ctx, false); err != nil {
+				level.Error(km.logger).Log("msg", "could not check or generate certificate", "error", err)
+			}
+		case <-ctx.Done():
+			ticker.Stop()
+			return
+		}
+	}
+}
+
+// CreateKeys checks that the SSH public key, private key, certificate and known_hosts
+// files for existence and validity, and generates new ones if required.
+func (km *KeyManager) CreateKeys(ctx context.Context, forceNewKeys bool) error {
+	newCertRequired, err := km.ensureKeysExist(forceNewKeys)
 	if err != nil {
 		return err
 	}
 
 	argumentHash := km.argumentsHash()
 	if km.argumentsHashIsDifferent(argumentHash) {
-		level.Info(km.logger).Log("msg", fmt.Sprintf("fetching new certificate: agent arguments changed hash=%s", argumentHash))
+		level.Info(km.logger).Log("msg", "new certificate required: agent arguments changed", "hash", argumentHash)
 		newCertRequired = true
 	}
 
@@ -164,10 +199,16 @@ func (km KeyManager) newCertRequired() bool {
 		level.Info(km.logger).Log("msg", "new certificate required: certificate is incorrect format")
 		return true
 	}
+
 	now := uint64(time.Now().Unix())
 
 	if now > cert.ValidBefore {
 		level.Info(km.logger).Log("msg", "new certificate required: certificate validity has expired")
+		return true
+	}
+
+	if now > (cert.ValidBefore - uint64(km.cfg.CertExpiryWindow.Seconds())) {
+		level.Info(km.logger).Log("msg", "new certificate required: certificate is about to expire")
 		return true
 	}
 
@@ -176,7 +217,7 @@ func (km KeyManager) newCertRequired() bool {
 		return true
 	}
 
-	level.Info(km.logger).Log("msg", "found existing valid certificate")
+	level.Debug(km.logger).Log("msg", "found existing valid certificate")
 
 	kh, err := os.ReadFile(path.Join(km.cfg.KeyFileDir(), KnownHostsFile))
 	if err != nil {
@@ -189,7 +230,7 @@ func (km KeyManager) newCertRequired() bool {
 		return true
 	}
 
-	level.Info(km.logger).Log("msg", fmt.Sprintf("found valid %s", KnownHostsFile))
+	level.Debug(km.logger).Log("msg", fmt.Sprintf("found valid %s", KnownHostsFile))
 	return false
 }
 

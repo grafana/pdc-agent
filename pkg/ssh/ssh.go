@@ -28,6 +28,8 @@ const (
 	// The exit code sent by the pdc server when the connection limit is reached.
 	ConnectionLimitReachedCode  = 254
 	ConnectionAlreadyExistsCode = 253
+
+	RenewCertInterval = 5 * time.Minute
 )
 
 // Config represents all configurable properties of the ssh package.
@@ -43,7 +45,12 @@ type Config struct {
 	SkipSSHValidation bool
 	// ForceKeyFileOverwrite forces a new ssh key pair to be generated.
 	ForceKeyFileOverwrite bool
-	URL                   *url.URL
+	// CertExpiryWindow is the time before the certificate expires to renew it.
+	CertExpiryWindow time.Duration
+	// CertCheckCertExpiryPeriod is how often to check that the current certificate
+	// is valid and regenerate it if necessary.
+	CertCheckCertExpiryPeriod time.Duration
+	URL                       *url.URL
 }
 
 // DefaultConfig returns a Config with some sensible defaults set
@@ -76,6 +83,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.SkipSSHValidation, "skip-ssh-validation", false, "Ignore openssh minimum version constraints.")
 	f.Func("ssh-flag", "Additional flags to be passed to ssh. Can be set more than once.", cfg.addSSHFlag)
 	f.BoolVar(&cfg.ForceKeyFileOverwrite, "force-key-file-overwrite", false, "Force a new ssh key pair to be generated")
+	f.DurationVar(&cfg.CertExpiryWindow, "cert-expiry-window", 5*time.Minute, "The time before the certificate expires to renew it.")
+	f.DurationVar(&cfg.CertCheckCertExpiryPeriod, "cert-check-expiry-period", 1*time.Minute, "How often to check certificate validity. 0 means it is only checked at start")
+
 }
 
 func (cfg Config) KeyFileDir() string {
@@ -122,7 +132,7 @@ func (s *Client) starting(ctx context.Context) error {
 	// check keys and cert validity before start, create new cert if required
 	// This will exit if it fails, rather than endlessly retrying to sign keys.
 	if s.km != nil {
-		err := s.km.CreateKeys(ctx)
+		err := s.km.Start(ctx)
 		if err != nil {
 			level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", err)
 			return err
@@ -159,19 +169,21 @@ func (s *Client) starting(ctx context.Context) error {
 			os.Exit(1)
 		}
 
-		level.Error(s.logger).Log("msg", "ssh client exited. restarting")
+		level.Info(s.logger).Log("msg", "ssh client exited. restarting", "exitCode", cmd.ProcessState.ExitCode())
 
 		// Check keys and cert validity before restart, create new cert if required.
 		// This covers the case where a certificate has become invalid since the last start.
 		// Do not return here: we want to keep trying to connect in case the PDC API
 		// is temporarily unavailable.
+		//
+		// They keymanager has logic to perform a background key refresh, but this
+		// logic should stay in place in case that is disabled.
 		if s.km != nil {
-			err := s.km.CreateKeys(ctx)
+			err := s.km.CreateKeys(ctx, false)
 			if err != nil {
 				level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", err)
 			}
 		}
-
 		return fmt.Errorf("ssh client exited")
 	})
 
