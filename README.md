@@ -28,13 +28,13 @@ Create public releases with `gh release create vX.X.X --generate-notes`
 Releases are managed using [goreleaser](https://goreleaser.com/). Use the following command to build binaries on your local machine.
 
 ```
-goreleaser build --snapshot --rm-dist
+goreleaser build --snapshot --clean
 ```
 
 If you want the docker image locally, you can run
 
 ```
-goreleaser release --snapshot --rm-dist
+goreleaser release --snapshot --clean
 ```
 
 ## Building
