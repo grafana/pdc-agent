@@ -46,6 +46,7 @@ dockers:
     dockerfile: ./cmd/pdc/Dockerfile
     image_templates:
       - grafana/{{ .ProjectName }}:latest
+      - grafana/{{ .ProjectName }}:latest-amd64
       - grafana/{{ .ProjectName }}:{{ .Version }}
       - grafana/{{ .ProjectName }}:{{ .Version }}-amd64
     build_flag_templates:
