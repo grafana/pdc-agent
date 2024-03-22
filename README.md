@@ -36,3 +36,7 @@ If you want the docker image locally, you can run
 ```
 goreleaser release --snapshot --clean
 ```
+
+## Building
+
+`CGO_ENABLED=0 go build ./cmd/pdc`
