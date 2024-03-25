@@ -5,14 +5,14 @@ updates:
   schedule:
     interval: daily
     time: "02:00"
-    timezone: "Etc/UCT"
+    timezone: "Etc/UTC"
   open-pull-requests-limit: 10
 - package-ecosystem: docker
   directory: /cmd/pdc
   schedule:
     interval: daily
     time: "02:00"
-    timezone: "Etc/UCT"
+    timezone: "Etc/UTC"
   open-pull-requests-limit: 10
 - package-ecosystem: github-actions
   directory: "/"
@@ -20,5 +20,5 @@ updates:
     interval: weekly
     day: sunday
     time: "02:00"
-    timezone: "Etc/UCT"
+    timezone: "Etc/UTC"
   open-pull-requests-limit: 10
