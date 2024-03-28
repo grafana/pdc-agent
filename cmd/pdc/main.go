@@ -142,7 +142,7 @@ func main() {
 	sshConfig.URL = gatewayURL
 
 	if mf.DevMode {
-		if err := setDevelopmentConfig(sshConfig, pdcClientCfg); err != nil {
+		if err = setDevelopmentConfig(sshConfig, pdcClientCfg); err != nil {
 			level.Error(logger).Log("msg", "error setting development config", "error", err)
 			os.Exit(1)
 		}
