@@ -28,8 +28,6 @@ const (
 	// The exit code sent by the pdc server when the connection limit is reached.
 	ConnectionLimitReachedCode  = 254
 	ConnectionAlreadyExistsCode = 253
-
-	RenewCertInterval = 5 * time.Minute
 )
 
 // Config represents all configurable properties of the ssh package.
