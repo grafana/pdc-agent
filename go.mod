@@ -5,7 +5,7 @@ go 1.21
 require (
 	github.com/go-kit/log v0.2.1
 	github.com/grafana/dskit v0.0.0-20230227163711-14b8fa2180af
-	github.com/hashicorp/go-retryablehttp v0.7.5
+	github.com/hashicorp/go-retryablehttp v0.7.7
 	github.com/mikesmitty/edkey v0.0.0-20170222072505-3356ea4e686a
 	github.com/prometheus/client_golang v1.19.1
 	github.com/stretchr/testify v1.9.0
