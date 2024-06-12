@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/pdc-agent/pkg/pdc"
@@ -189,6 +192,15 @@ func run(logger log.Logger, sshConfig *ssh.Config, pdcConfig *pdc.Config) error 
 		return err
 	}
 
+	// If ssh client start successfully, start the metrics server
+	go func() {
+		level.Info(logger).Log("msg", "starting serving metrics", "port", sshConfig.MetricsHTTPPort)
+		srv := newMetricsServer(sshConfig.MetricsHTTPPort)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			level.Error(logger).Log("msg", "failed to start metrics server", "err", err)
+		}
+	}()
+
 	// Wait for the ssh client to exit
 	_ = sshClient.AwaitTerminated(context.Background())
 
@@ -270,4 +282,14 @@ func setupLogger(lvl string) log.Logger {
 	logger = log.With(logger, "ts", log.DefaultTimestamp)
 
 	return logger
+}
+
+func newMetricsServer(port int) *http.Server {
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+
+	return &http.Server{
+		Addr:    fmt.Sprintf(":%d", port),
+		Handler: mux,
+	}
 }
