@@ -191,7 +191,7 @@ func run(logger log.Logger, sshConfig *ssh.Config, pdcConfig *pdc.Config) error 
 	}
 
 	// If ssh client start successfully, start the metrics server
-	ms := metrics.NewMetricsServer(logger, sshConfig.MetricsHTTPPort)
+	ms := metrics.NewMetricsServer(logger, sshConfig.MetricsAddr)
 	go ms.Run()
 
 	// Wait for the ssh client to exit

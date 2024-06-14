@@ -49,7 +49,8 @@ type Config struct {
 	// is valid and regenerate it if necessary.
 	CertCheckCertExpiryPeriod time.Duration
 	URL                       *url.URL
-	MetricsHTTPPort           int
+	// MetricsAddr is the port to expose metrics on
+	MetricsAddr string
 }
 
 // DefaultConfig returns a Config with some sensible defaults set
@@ -84,7 +85,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.ForceKeyFileOverwrite, "force-key-file-overwrite", false, "Force a new ssh key pair to be generated")
 	f.DurationVar(&cfg.CertExpiryWindow, "cert-expiry-window", 5*time.Minute, "The time before the certificate expires to renew it.")
 	f.DurationVar(&cfg.CertCheckCertExpiryPeriod, "cert-check-expiry-period", 1*time.Minute, "How often to check certificate validity. 0 means it is only checked at start")
-	f.StringVar(&cfg.MetricsAddr, "metrics-addr", ":8090", "The port to expose metrics on")
+	f.StringVar(&cfg.MetricsAddr, "metrics-addr", ":8090", "HTTP server address to expose metrics on")
 }
 
 func (cfg Config) KeyFileDir() string {

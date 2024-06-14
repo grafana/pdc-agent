@@ -2,7 +2,6 @@ package metrics
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 
 	"github.com/go-kit/log"
@@ -29,7 +28,7 @@ func NewMetricsServer(logger log.Logger, addr string) *Server {
 }
 
 func (s *Server) Run() {
-	level.Info(s.logger).Log("msg", "starting serving metrics on port "+s.httpServer.Addr)
+	level.Info(s.logger).Log("msg", "Starting serving metrics", "addr", s.httpServer.Addr)
 	if err := s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		level.Info(s.logger).Log("msg", "failed to run metrics server", "err", err)
 	}
