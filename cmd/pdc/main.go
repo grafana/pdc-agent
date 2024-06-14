@@ -18,6 +18,7 @@ import (
 	"github.com/go-kit/log/level"
 
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/pdc-agent/pkg/metrics"
 	"github.com/grafana/pdc-agent/pkg/pdc"
 	"github.com/grafana/pdc-agent/pkg/ssh"
 )
@@ -188,6 +189,10 @@ func run(logger log.Logger, sshConfig *ssh.Config, pdcConfig *pdc.Config) error 
 		level.Error(logger).Log("msg", fmt.Sprintf("cannot start ssh client: %s", err))
 		return err
 	}
+
+	// If ssh client start successfully, start the metrics server
+	ms := metrics.NewMetricsServer(logger, sshConfig.MetricsAddr)
+	go ms.Run()
 
 	// Wait for the ssh client to exit
 	_ = sshClient.AwaitTerminated(context.Background())
