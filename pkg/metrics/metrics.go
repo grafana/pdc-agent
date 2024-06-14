@@ -15,14 +15,14 @@ type Server struct {
 	logger     log.Logger
 }
 
-func NewMetricsServer(logger log.Logger, port int) *Server {
+func NewMetricsServer(logger log.Logger, addr string) *Server {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
 
 	return &Server{
 		logger: logger,
 		httpServer: &http.Server{
-			Addr:    fmt.Sprintf(":%d", port),
+			Addr:    addr,
 			Handler: mux,
 		},
 	}
