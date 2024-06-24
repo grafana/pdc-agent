@@ -143,7 +143,10 @@ func main() {
 	sshConfig.URL = gatewayURL
 
 	if mf.DevMode {
-		setDevelopmentConfig(sshConfig, pdcClientCfg)
+		if err = setDevelopmentConfig(sshConfig, pdcClientCfg); err != nil {
+			level.Error(logger).Log("msg", "error setting development config", "error", err)
+			os.Exit(1)
+		}
 	}
 
 	err = run(logger, sshConfig, pdcClientCfg)
@@ -155,7 +158,7 @@ func main() {
 }
 
 // Configures the agent for local development
-func setDevelopmentConfig(sshCfg *ssh.Config, pdcClientCfg *pdc.Config) {
+func setDevelopmentConfig(sshCfg *ssh.Config, pdcClientCfg *pdc.Config) error {
 	pdcClientCfg.URL, _ = url.Parse("http://localhost:9181")
 
 	pdcClientCfg.DevHeaders = map[string]string{
@@ -165,8 +168,10 @@ func setDevelopmentConfig(sshCfg *ssh.Config, pdcClientCfg *pdc.Config) {
 	pdcClientCfg.SignPublicKeyEndpoint = "/api/v1/sign-public-key"
 
 	sshCfg.Port = 2244
-	sshCfg.URL, _ = url.Parse("localhost")
+	var err error
+	sshCfg.URL, err = url.Parse(pdcClientCfg.DevHost)
 	sshCfg.PDC = *pdcClientCfg
+	return err
 }
 
 func run(logger log.Logger, sshConfig *ssh.Config, pdcConfig *pdc.Config) error {
