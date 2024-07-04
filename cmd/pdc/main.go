@@ -97,6 +97,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Allow overrides of _some_ empty flags with environment variables
+	clusterOverride, ok := os.LookupEnv("GCLOUD_PDC_CLUSTER")
+	if ok && mf.Cluser = nil {
+		mf.Cluster = clustOverride
+	}
+
+	signingTokenOverride, ok := os.LookupEnv("GCLOUD_PDC_SIGNING_TOKEN")
+	if ok && pdcClientCfg.Token = nil {
+		pdcClientCfg.Token = signingTokenOverride
+	}
+
+	hostedGrafanaIdOverride, ok := os.LookupEnv("GCLOUD_HOSTED_GRAFANA_ID")
+	if ok && pdcClientCfg.HostedGrafanaID = nil {
+		pdcClientCfg.HostedGrafanaID = hostedGrafanaIdOverride
+	}
+
 	sshConfig.Args = os.Args[1:]
 	sshConfig.LogLevel, err = logLevelToSSHLogLevel(mf.LogLevel)
 	if err != nil {

@@ -22,5 +22,3 @@ main
 *.iml
 .vscode/
 !.vscode/launch.json
-
-pdc
