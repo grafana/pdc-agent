@@ -98,19 +98,19 @@ func main() {
 	}
 
 	// Allow overrides of _some_ empty flags with environment variables
-	clusterOverride, ok := os.LookupEnv("GCLOUD_PDC_CLUSTER")
-	if ok && mf.Cluser = nil {
-		mf.Cluster = clustOverride
+	clusterEnvVar, ok := os.LookupEnv("GCLOUD_PDC_CLUSTER")
+	if ok && (mf.Cluster == "") {
+		mf.Cluster = clusterEnvVar
 	}
 
-	signingTokenOverride, ok := os.LookupEnv("GCLOUD_PDC_SIGNING_TOKEN")
-	if ok && pdcClientCfg.Token = nil {
-		pdcClientCfg.Token = signingTokenOverride
+	signingTokenEnvVar, ok := os.LookupEnv("GCLOUD_PDC_SIGNING_TOKEN")
+	if ok && (pdcClientCfg.Token == "") {
+		pdcClientCfg.Token = signingTokenEnvVar
 	}
 
-	hostedGrafanaIdOverride, ok := os.LookupEnv("GCLOUD_HOSTED_GRAFANA_ID")
-	if ok && pdcClientCfg.HostedGrafanaID = nil {
-		pdcClientCfg.HostedGrafanaID = hostedGrafanaIdOverride
+	hostedGrafanaIDEnvVar, ok := os.LookupEnv("GCLOUD_HOSTED_GRAFANA_ID")
+	if ok && (pdcClientCfg.HostedGrafanaID == "") {
+		pdcClientCfg.HostedGrafanaID = hostedGrafanaIDEnvVar
 	}
 
 	sshConfig.Args = os.Args[1:]
