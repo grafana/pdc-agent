@@ -23,4 +23,6 @@ main
 .vscode/
 !.vscode/launch.json
 
+# ignore build artifacts
+/pdc-agent
 /pdc
