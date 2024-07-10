@@ -17,6 +17,18 @@ Use the `-log.level` flag. Run the agent with the `-help` flag to see the possib
 | `info`       | 0 (`-v` not set) |
 | `debug`      | 3 (`-vvv`)       |
 
+## Environment Variables and Flags
+
+If using commandline flags is difficult to use in your environment, you can define environment variables to be consumed by the PDC Agent instead. *Commandline flags always take precedence.*
+
+The following mappings are currently provided:
+
+| Flag                        | Environment Variable                  |
+| --------------------------- | ------------------------------------- |
+| `-token`                    | `GCLOUD_PDC_SIGNING_TOKEN`            |
+| `-cluster`                  | `GCLOUD_PDC_CLUSTER`                  |
+| `-gcloud-hosted-grafana-id` | `GCLOUD_PDC_GCLOUD_HOSTED_GRAFANA_ID` |
+
 ## DEV flags
 
 Flags prefixed with `-dev` are used for local development and can be removed at any time.
