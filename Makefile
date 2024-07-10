@@ -1,5 +1,5 @@
 BINARY_NAME=pdc-agent
-
+.PHONY: all build test lint clean
 all: lint build test
 
 build:
