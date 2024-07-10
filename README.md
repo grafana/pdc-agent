@@ -21,6 +21,27 @@ Use the `-log.level` flag. Run the agent with the `-help` flag to see the possib
 
 Flags prefixed with `-dev` are used for local development and can be removed at any time.
 
+# Developer guide
+
+## Dependencies
+
+You will need the following dependencies to test and build the pdc-agent:
+
+- git
+- go (see [`go.mod`](./go.mod) for minimum required version)
+- [golangci-lint](https://golangci-lint.run/)
+- [gh](https://cli.github.com/), the GitHub cli (for releasing only)
+
+
+## Build and test
+
+Run unit tests, lint and build with:
+
+```
+make
+```
+
+
 ## Releasing
 
 Create public releases with `gh release create vX.X.X --generate-notes`
@@ -36,7 +57,3 @@ If you want the docker image locally, you can run
 ```
 goreleaser release --snapshot --clean
 ```
-
-## Building
-
-`CGO_ENABLED=0 go build ./cmd/pdc`
