@@ -1,5 +1,5 @@
 BINARY_NAME=pdc-agent
-.PHONY: all build test lint clean
+
 all: lint build test
 
 build:
@@ -14,3 +14,5 @@ lint:
 clean:
 	go clean
 	rm ${BINARY_NAME}
+
+.PHONY: all build test lint clean
