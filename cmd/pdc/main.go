@@ -51,9 +51,21 @@ type mainFlags struct {
 func (mf *mainFlags) RegisterFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&mf.PrintHelp, "h", false, "Print help")
 	fs.StringVar(&mf.LogLevel, "log.level", logLevelinfo, `"debug", "info", "warn" or "error"`)
-	fs.StringVar(&mf.Cluster, "cluster", "", "the PDC cluster to connect to use")
-	fs.StringVar(&mf.Domain, "domain", "grafana.net", "the domain of the PDC cluster")
+	fs.StringVar(&mf.Cluster, "cluster", "", "the PDC cluster to connect to use (env: GCLOUD_PDC_CLUSTER)")
+	fs.StringVar(&mf.Domain, "domain", "grafana.net", "the domain of the PDC cluster (env: GCLOUD_PDC_DOMAIN)")
 	fs.BoolVar(&mf.DevMode, "dev-mode", false, "[DEVELOPMENT ONLY] run the agent in development mode")
+}
+
+func (mf *mainFlags) ApplyEnvironment() {
+	// do not override CLI arguments, so only apply on default value
+	if mf.Domain == "grafana.net" {
+		if domain := os.Getenv("GCLOUD_PDC_DOMAIN"); domain != "" {
+			mf.Domain = domain
+		}
+	}
+	if mf.Cluster == "" {
+		mf.Cluster = os.Getenv("GCLOUD_PDC_CLUSTER")
+	}
 }
 
 func logLevelToSSHLogLevel(level string) (int, error) {
@@ -96,6 +108,9 @@ func main() {
 		fmt.Println("cannot parse flags")
 		os.Exit(1)
 	}
+
+	mf.ApplyEnvironment()
+	pdcClientCfg.ApplyEnvironment()
 
 	sshConfig.Args = os.Args[1:]
 	sshConfig.LogLevel, err = logLevelToSSHLogLevel(mf.LogLevel)

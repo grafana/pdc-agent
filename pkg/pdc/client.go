@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 
 	"github.com/go-kit/log"
@@ -54,11 +55,21 @@ type Config struct {
 
 func (cfg *Config) RegisterFlags(fs *flag.FlagSet) {
 	var deprecated string
-	fs.StringVar(&cfg.Token, "token", "", "The token to use to authenticate with Grafana Cloud. It must have the pdc-signing:write scope")
-	fs.StringVar(&cfg.HostedGrafanaID, "gcloud-hosted-grafana-id", "", "The ID of the Hosted Grafana instance to connect to")
+	fs.StringVar(&cfg.Token, "token", "", "The token to use to authenticate with Grafana Cloud. It must have the pdc-signing:write scope (env: GCLOUD_PDC_SIGNING_TOKEN)")
+	fs.StringVar(&cfg.HostedGrafanaID, "gcloud-hosted-grafana-id", "", "The ID of the Hosted Grafana instance to connect to (env: GCLOUD_HOSTED_GRAFANA_ID)")
 	fs.StringVar(&cfg.DevNetwork, "dev-network", "", "[DEVELOPMENT ONLY] the network the agent will connect to")
 	fs.StringVar(&deprecated, "network", "", "DEPRECATED: The name of the PDC network to connect to")
 	fs.IntVar(&cfg.RetryMax, "retrymax", 4, "The max num of retries for http requests")
+}
+
+func (cfg *Config) ApplyEnvironment() {
+	// do not override CLI arguments
+	if cfg.Token == "" {
+		cfg.Token = os.Getenv("GCLOUD_PDC_SIGNING_TOKEN")
+	}
+	if cfg.HostedGrafanaID == "" {
+		cfg.HostedGrafanaID = os.Getenv("GCLOUD_HOSTED_GRAFANA_ID")
+	}
 }
 
 // Client is a PDC API client
