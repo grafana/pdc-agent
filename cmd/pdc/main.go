@@ -54,6 +54,7 @@ func (mf *mainFlags) RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&mf.Cluster, "cluster", "", "the PDC cluster to connect to use")
 	fs.StringVar(&mf.Domain, "domain", "grafana.net", "the domain of the PDC cluster")
 	fs.BoolVar(&mf.DevMode, "dev-mode", false, "[DEVELOPMENT ONLY] run the agent in development mode")
+
 }
 
 func logLevelToSSHLogLevel(level string) (int, error) {
@@ -143,7 +144,7 @@ func main() {
 	sshConfig.URL = gatewayURL
 
 	if mf.DevMode {
-		setDevelopmentConfig(sshConfig, pdcClientCfg)
+		setDevelopmentConfig(mf.Domain, sshConfig, pdcClientCfg)
 	}
 
 	err = run(logger, sshConfig, pdcClientCfg)
@@ -155,8 +156,8 @@ func main() {
 }
 
 // Configures the agent for local development
-func setDevelopmentConfig(sshCfg *ssh.Config, pdcClientCfg *pdc.Config) {
-	pdcClientCfg.URL, _ = url.Parse("http://localhost:9181")
+func setDevelopmentConfig(domain string, sshCfg *ssh.Config, pdcClientCfg *pdc.Config) {
+	pdcClientCfg.URL, _ = url.Parse(fmt.Sprintf("http://%s:%d", domain, pdcClientCfg.DevPort))
 
 	pdcClientCfg.DevHeaders = map[string]string{
 		"X-Scope-OrgID":      pdcClientCfg.HostedGrafanaID,
@@ -164,8 +165,8 @@ func setDevelopmentConfig(sshCfg *ssh.Config, pdcClientCfg *pdc.Config) {
 	}
 	pdcClientCfg.SignPublicKeyEndpoint = "/api/v1/sign-public-key"
 
-	sshCfg.Port = 2244
-	sshCfg.URL, _ = url.Parse("localhost")
+	sshCfg.Port = sshCfg.DevPort
+	sshCfg.URL, _ = url.Parse(domain)
 	sshCfg.PDC = *pdcClientCfg
 }
 
