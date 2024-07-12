@@ -53,7 +53,7 @@ type Config struct {
 
 	// Used for local development.
 	// DevPort is the port number for the PDC API
-	DevPort int
+	DevPort string
 }
 
 func (cfg *Config) RegisterFlags(fs *flag.FlagSet) {
@@ -64,7 +64,7 @@ func (cfg *Config) RegisterFlags(fs *flag.FlagSet) {
 	fs.IntVar(&cfg.RetryMax, "retrymax", 4, "The max num of retries for http requests")
 
 	fs.StringVar(&cfg.DevNetwork, "dev-network", "", "[DEVELOPMENT ONLY] the network the agent will connect to")
-	fs.IntVar(&cfg.DevPort, "dev-api-port", 9181, "[DEVELOPMENT ONLY] The port to use for agent connections to the PDC API")
+	fs.StringVar(&cfg.DevPort, "dev-api-port", "9181", "[DEVELOPMENT ONLY] The port to use for agent connections to the PDC API")
 }
 
 // Client is a PDC API client

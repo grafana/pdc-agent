@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
@@ -157,7 +158,7 @@ func main() {
 
 // Configures the agent for local development
 func setDevelopmentConfig(domain string, sshCfg *ssh.Config, pdcClientCfg *pdc.Config) {
-	pdcClientCfg.URL, _ = url.Parse(fmt.Sprintf("http://%s:%d", domain, pdcClientCfg.DevPort))
+	pdcClientCfg.URL, _ = url.Parse(net.JoinHostPort(domain, pdcClientCfg.DevPort))
 
 	pdcClientCfg.DevHeaders = map[string]string{
 		"X-Scope-OrgID":      pdcClientCfg.HostedGrafanaID,
