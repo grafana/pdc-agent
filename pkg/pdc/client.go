@@ -50,15 +50,21 @@ type Config struct {
 	// Used for local development.
 	// DevNetwork is the network that the agent will connect to.
 	DevNetwork string
+
+	// Used for local development.
+	// DevPort is the port number for the PDC API
+	DevPort string
 }
 
 func (cfg *Config) RegisterFlags(fs *flag.FlagSet) {
 	var deprecated string
 	fs.StringVar(&cfg.Token, "token", "", "The token to use to authenticate with Grafana Cloud. It must have the pdc-signing:write scope")
 	fs.StringVar(&cfg.HostedGrafanaID, "gcloud-hosted-grafana-id", "", "The ID of the Hosted Grafana instance to connect to")
-	fs.StringVar(&cfg.DevNetwork, "dev-network", "", "[DEVELOPMENT ONLY] the network the agent will connect to")
 	fs.StringVar(&deprecated, "network", "", "DEPRECATED: The name of the PDC network to connect to")
 	fs.IntVar(&cfg.RetryMax, "retrymax", 4, "The max num of retries for http requests")
+
+	fs.StringVar(&cfg.DevNetwork, "dev-network", "", "[DEVELOPMENT ONLY] the network the agent will connect to")
+	fs.StringVar(&cfg.DevPort, "dev-api-port", "9181", "[DEVELOPMENT ONLY] The port to use for agent connections to the PDC API")
 }
 
 // Client is a PDC API client
