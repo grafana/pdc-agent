@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -121,6 +122,54 @@ func main() {
 		usageFn()
 		fmt.Printf("setting log level: %s\n", err)
 		os.Exit(1)
+	}
+
+	sshKeyFileEnvVar, ok := os.LookupEnv("GCLOUD_SSH_KEY_FILE")
+	if ok && (sshConfig.KeyFile == "") {
+		sshConfig.KeyFile = sshKeyFileEnvVar
+	}
+
+	// Using the same logic as the `ssh.Config` definition, clamping to max of 3
+	sshLogLevelSelectEnvVar, envVarOk := os.LookupEnv("GCLOUD_SSH_LOG_LEVEL")
+	parsedSSHLogLevelSelectEnvVar, parseIntErr := strconv.Atoi(sshLogLevelSelectEnvVar)
+	if parseIntErr == nil && envVarOk && (sshConfig.LogLevel > 3 || sshConfig.LogLevel < 0) {
+		sshConfig.LogLevel = parsedSSHLogLevelSelectEnvVar
+	}
+
+	skipSSHValidationEnvVar, envVarOk := os.LookupEnv("GCLOUD_SSH_SKIP_SSH_VALIDATION")
+	parsedSSHValidationEnvVar, parseBoolErr := strconv.ParseBool(skipSSHValidationEnvVar)
+	if parseBoolErr == nil && envVarOk && !sshConfig.SkipSSHValidation {
+		sshConfig.SkipSSHValidation = parsedSSHValidationEnvVar
+	}
+
+	// We're actually going to append the values provided here to the already-parsed SSHFlags array
+	// As the argument can be provided more than once, this feels like the most compatible option
+	additionalSSHFlagsEnvVar, ok := os.LookupEnv("GCLOUD_SSH_ADDITIONAL_SSHFLAGS")
+	if ok {
+		sshConfig.SSHFlags = append(sshConfig.SSHFlags, strings.Split(additionalSSHFlagsEnvVar, " ")...)
+	}
+
+	sshForceKeyFileOverwriteEnvVar, envVarOk := os.LookupEnv("GCLOUD_SSH_FORCE_KEY_FILE_OVERWRITE")
+	parsedSSHForceKeyFileOverwriteEnvVar, parseBoolErr := strconv.ParseBool(sshForceKeyFileOverwriteEnvVar)
+	if parseBoolErr == nil && envVarOk && !sshConfig.ForceKeyFileOverwrite {
+		sshConfig.ForceKeyFileOverwrite = parsedSSHForceKeyFileOverwriteEnvVar
+	}
+
+	sshCertExpiryWindowEnvVar, envVarOk := os.LookupEnv("GCLOUD_SSH_CERT_EXPIRY_WINDOW")
+	parsedSSHCertExpiryWindowEnvVar, parseTimeErr := time.ParseDuration(sshCertExpiryWindowEnvVar)
+	if parseTimeErr == nil && envVarOk && (sshConfig.CertExpiryWindow == 0) {
+		sshConfig.CertExpiryWindow = parsedSSHCertExpiryWindowEnvVar
+	}
+
+	sshCheckCertExpiryPeriod, envVarOk := os.LookupEnv("GCLOUD_SSH_CERT_CHECK_EXPIRY_PERIOD")
+	parsedSSHCheckCertExpiryPeriod, parseTimeErr := time.ParseDuration(sshCheckCertExpiryPeriod)
+	if parseTimeErr == nil && envVarOk && (sshConfig.CertCheckCertExpiryPeriod == 0) {
+		sshConfig.CertCheckCertExpiryPeriod = parsedSSHCheckCertExpiryPeriod
+	}
+
+	sshMetricsAddr, ok := os.LookupEnv("GCLOUD_SSH_METRICS_ADDR")
+	if ok && (sshConfig.MetricsAddr == "") {
+		sshConfig.MetricsAddr = sshMetricsAddr
 	}
 
 	logger := setupLogger(mf.LogLevel)
