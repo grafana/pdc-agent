@@ -125,20 +125,23 @@ func main() {
 	}
 
 	sshKeyFileEnvVar, ok := os.LookupEnv("GCLOUD_SSH_KEY_FILE")
-	if ok && (sshConfig.KeyFile == "") {
+	if ok && (sshConfig.KeyFile == ssh.DefaultConfig().KeyFile) {
 		sshConfig.KeyFile = sshKeyFileEnvVar
 	}
 
 	// Using the same logic as the `ssh.Config` definition, clamping to max of 3
-	sshLogLevelSelectEnvVar, envVarOk := os.LookupEnv("GCLOUD_SSH_LOG_LEVEL")
+	sshLogLevelSelectEnvVar, ok := os.LookupEnv("GCLOUD_SSH_LOG_LEVEL")
 	parsedSSHLogLevelSelectEnvVar, parseIntErr := strconv.Atoi(sshLogLevelSelectEnvVar)
-	if parseIntErr == nil && envVarOk && (sshConfig.LogLevel > 3 || sshConfig.LogLevel < 0) {
+	if ok &&
+		parseIntErr == nil &&
+		(sshConfig.LogLevel > 3 || sshConfig.LogLevel < 1) &&
+		(parsedSSHLogLevelSelectEnvVar < 3 && parsedSSHLogLevelSelectEnvVar >= 0) {
 		sshConfig.LogLevel = parsedSSHLogLevelSelectEnvVar
 	}
 
-	skipSSHValidationEnvVar, envVarOk := os.LookupEnv("GCLOUD_SSH_SKIP_SSH_VALIDATION")
+	skipSSHValidationEnvVar, ok := os.LookupEnv("GCLOUD_SSH_SKIP_SSH_VALIDATION")
 	parsedSSHValidationEnvVar, parseBoolErr := strconv.ParseBool(skipSSHValidationEnvVar)
-	if parseBoolErr == nil && envVarOk && !sshConfig.SkipSSHValidation {
+	if ok && parseBoolErr == nil && !sshConfig.SkipSSHValidation {
 		sshConfig.SkipSSHValidation = parsedSSHValidationEnvVar
 	}
 
@@ -149,26 +152,26 @@ func main() {
 		sshConfig.SSHFlags = append(sshConfig.SSHFlags, strings.Split(additionalSSHFlagsEnvVar, " ")...)
 	}
 
-	sshForceKeyFileOverwriteEnvVar, envVarOk := os.LookupEnv("GCLOUD_SSH_FORCE_KEY_FILE_OVERWRITE")
+	sshForceKeyFileOverwriteEnvVar, ok := os.LookupEnv("GCLOUD_SSH_FORCE_KEY_FILE_OVERWRITE")
 	parsedSSHForceKeyFileOverwriteEnvVar, parseBoolErr := strconv.ParseBool(sshForceKeyFileOverwriteEnvVar)
-	if parseBoolErr == nil && envVarOk && !sshConfig.ForceKeyFileOverwrite {
+	if ok && parseBoolErr == nil && !sshConfig.ForceKeyFileOverwrite {
 		sshConfig.ForceKeyFileOverwrite = parsedSSHForceKeyFileOverwriteEnvVar
 	}
 
-	sshCertExpiryWindowEnvVar, envVarOk := os.LookupEnv("GCLOUD_SSH_CERT_EXPIRY_WINDOW")
+	sshCertExpiryWindowEnvVar, ok := os.LookupEnv("GCLOUD_SSH_CERT_EXPIRY_WINDOW")
 	parsedSSHCertExpiryWindowEnvVar, parseTimeErr := time.ParseDuration(sshCertExpiryWindowEnvVar)
-	if parseTimeErr == nil && envVarOk && (sshConfig.CertExpiryWindow == 0) {
+	if ok && parseTimeErr == nil && (sshConfig.CertExpiryWindow == time.Duration(5)*time.Minute) {
 		sshConfig.CertExpiryWindow = parsedSSHCertExpiryWindowEnvVar
 	}
 
-	sshCheckCertExpiryPeriod, envVarOk := os.LookupEnv("GCLOUD_SSH_CERT_CHECK_EXPIRY_PERIOD")
+	sshCheckCertExpiryPeriod, ok := os.LookupEnv("GCLOUD_SSH_CERT_CHECK_EXPIRY_PERIOD")
 	parsedSSHCheckCertExpiryPeriod, parseTimeErr := time.ParseDuration(sshCheckCertExpiryPeriod)
-	if parseTimeErr == nil && envVarOk && (sshConfig.CertCheckCertExpiryPeriod == 0) {
+	if ok && parseTimeErr == nil && (sshConfig.CertCheckCertExpiryPeriod == time.Duration(1)*time.Minute) {
 		sshConfig.CertCheckCertExpiryPeriod = parsedSSHCheckCertExpiryPeriod
 	}
 
 	sshMetricsAddr, ok := os.LookupEnv("GCLOUD_SSH_METRICS_ADDR")
-	if ok && (sshConfig.MetricsAddr == "") {
+	if ok && (sshConfig.MetricsAddr == ":8090") {
 		sshConfig.MetricsAddr = sshMetricsAddr
 	}
 
