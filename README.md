@@ -23,19 +23,19 @@ If using commandline flags is difficult to use in your environment, you can defi
 
 The following mappings are currently provided:
 
-| Flag                        | Environment Variable                  |
-|-----------------------------|---------------------------------------|
-| `-token`                    | `GCLOUD_PDC_SIGNING_TOKEN`            |
-| `-cluster`                  | `GCLOUD_PDC_CLUSTER`                  |
-| `-gcloud-hosted-grafana-id` | `GCLOUD_PDC_GCLOUD_HOSTED_GRAFANA_ID` |
-| `-ssh-key-file`             | `GCLOUD_SSH_KEY_FILE`                 |
-| `-log-level`                | `GCLOUD_SSH_LOG_LEVEL`                |
-| `-skip-ssh-validation`      | `GCLOUD_SSH_SKIP_SSH_VALIDATION`      |
-| `-ssh-flag`                 | `GCLOUD_SSH_ADDITIONAL_SSH_FLAGS`†    |
-| `-force-key-file-overwrite` | `GCLOUD_SSH_FORCE_KEY_FILE_OVERWRITE` |
-| `-cert-expiry-window`       | `GCLOUD_SSH_CERT_EXPIRY_WINDOW`       |
-| `-cert-check-expiry-period` | `GCLOUD_SSH_CERT_CHECK_EXPIRY_PERIOD` |
-| `-metrics-addr`             | `GCLOUD_SSH_METRICS_ADDR`             |
+| Flag                        | Environment Variable                      |
+|-----------------------------|-------------------------------------------|
+| `-token`                    | `GCLOUD_PDC_SIGNING_TOKEN`                |
+| `-cluster`                  | `GCLOUD_PDC_CLUSTER`                      |
+| `-gcloud-hosted-grafana-id` | `GCLOUD_PDC_GCLOUD_HOSTED_GRAFANA_ID`     |
+| `-ssh-key-file`             | `GCLOUD_PDC_SSH_KEY_FILE`                 |
+| `-log-level`                | `GCLOUD_PDC_SSH_LOG_LEVEL`                |
+| `-skip-ssh-validation`      | `GCLOUD_PDC_SSH_SKIP_SSH_VALIDATION`      |
+| `-ssh-flag`                 | `GCLOUD_PDC_SSH_ADDITIONAL_SSH_FLAGS`†    |
+| `-force-key-file-overwrite` | `GCLOUD_PDC_SSH_FORCE_KEY_FILE_OVERWRITE` |
+| `-cert-expiry-window`       | `GCLOUD_PDC_SSH_CERT_EXPIRY_WINDOW`       |
+| `-cert-check-expiry-period` | `GCLOUD_PDC_SSH_CERT_CHECK_EXPIRY_PERIOD` |
+| `-metrics-addr`             | `GCLOUD_PDC_SSH_METRICS_ADDR`             |
 
 † - This flag, unlike the others, is _additive_ with arguments provided via `-ssh-flag`, not overridden by them
 

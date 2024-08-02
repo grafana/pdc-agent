@@ -105,6 +105,59 @@ func (cfg *Config) addSSHFlag(s string) error {
 	return nil
 }
 
+func (cfg *Config) ApplyEnvironment(grafanaPDCEnvVarPrefix string) {
+	sshKeyFileEnvVar, ok := os.LookupEnv(fmt.Sprintf("%v_SSH_KEY_FILE", grafanaPDCEnvVarPrefix))
+	if ok && (cfg.KeyFile == DefaultConfig().KeyFile) {
+		cfg.KeyFile = sshKeyFileEnvVar
+	}
+
+	// Using the same logic as the `ssh.Config` definition, clamping to max of 3
+	sshLogLevelSelectEnvVar, ok := os.LookupEnv(fmt.Sprintf("%v_SSH_LOG_LEVEL", grafanaPDCEnvVarPrefix))
+	parsedSSHLogLevelSelectEnvVar, parseIntErr := strconv.Atoi(sshLogLevelSelectEnvVar)
+	if ok &&
+		parseIntErr == nil &&
+		(cfg.LogLevel > 3 || cfg.LogLevel < 1) &&
+		(parsedSSHLogLevelSelectEnvVar < 3 && parsedSSHLogLevelSelectEnvVar >= 0) {
+		cfg.LogLevel = parsedSSHLogLevelSelectEnvVar
+	}
+
+	skipSSHValidationEnvVar, ok := os.LookupEnv(fmt.Sprintf("%v_SSH_SKIP_SSH_VALIDATION", grafanaPDCEnvVarPrefix))
+	parsedSSHValidationEnvVar, parseBoolErr := strconv.ParseBool(skipSSHValidationEnvVar)
+	if ok && parseBoolErr == nil && !cfg.SkipSSHValidation {
+		cfg.SkipSSHValidation = parsedSSHValidationEnvVar
+	}
+
+	// We're actually going to append the values provided here to the already-parsed SSHFlags array
+	// As the argument can be provided more than once, this feels like the most compatible option
+	additionalSSHFlagsEnvVar, ok := os.LookupEnv(fmt.Sprintf("%v_SSH_ADDITIONAL_SSHFLAGS", grafanaPDCEnvVarPrefix))
+	if ok {
+		cfg.SSHFlags = append(cfg.SSHFlags, strings.Split(additionalSSHFlagsEnvVar, " ")...)
+	}
+
+	sshForceKeyFileOverwriteEnvVar, ok := os.LookupEnv(fmt.Sprintf("%v_SSH_FORCE_KEY_FILE_OVERWRITE", grafanaPDCEnvVarPrefix))
+	parsedSSHForceKeyFileOverwriteEnvVar, parseBoolErr := strconv.ParseBool(sshForceKeyFileOverwriteEnvVar)
+	if ok && parseBoolErr == nil && !cfg.ForceKeyFileOverwrite {
+		cfg.ForceKeyFileOverwrite = parsedSSHForceKeyFileOverwriteEnvVar
+	}
+
+	sshCertExpiryWindowEnvVar, ok := os.LookupEnv(fmt.Sprintf("%v_SSH_CERT_EXPIRY_WINDOW", grafanaPDCEnvVarPrefix))
+	parsedSSHCertExpiryWindowEnvVar, parseTimeErr := time.ParseDuration(sshCertExpiryWindowEnvVar)
+	if ok && parseTimeErr == nil && (cfg.CertExpiryWindow == time.Duration(5)*time.Minute) {
+		cfg.CertExpiryWindow = parsedSSHCertExpiryWindowEnvVar
+	}
+
+	sshCheckCertExpiryPeriod, ok := os.LookupEnv(fmt.Sprintf("%v_SSH_CERT_CHECK_EXPIRY_PERIOD", grafanaPDCEnvVarPrefix))
+	parsedSSHCheckCertExpiryPeriod, parseTimeErr := time.ParseDuration(sshCheckCertExpiryPeriod)
+	if ok && parseTimeErr == nil && (cfg.CertCheckCertExpiryPeriod == time.Duration(1)*time.Minute) {
+		cfg.CertCheckCertExpiryPeriod = parsedSSHCheckCertExpiryPeriod
+	}
+
+	sshMetricsAddr, ok := os.LookupEnv(fmt.Sprintf("%v_SSH_METRICS_ADDR", grafanaPDCEnvVarPrefix))
+	if ok && (cfg.MetricsAddr == ":8090") {
+		cfg.MetricsAddr = sshMetricsAddr
+	}
+}
+
 // Client is a client for ssh. It configures and runs ssh commands
 type Client struct {
 	*services.BasicService

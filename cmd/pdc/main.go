@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"runtime"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -37,6 +36,7 @@ var (
 )
 
 const logLevelinfo = "info"
+const grafanaPDCEnvVarPrefix = "GCLOUD_PDC"
 
 type mainFlags struct {
 	PrintHelp bool
@@ -57,6 +57,13 @@ func (mf *mainFlags) RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&mf.Domain, "domain", "grafana.net", "the domain of the PDC cluster")
 	fs.BoolVar(&mf.DevMode, "dev-mode", false, "[DEVELOPMENT ONLY] run the agent in development mode")
 
+}
+
+func (mf *mainFlags) ApplyEnvironment(grafanaPDCEnvVarPrefix string) {
+	clusterEnvVar, ok := os.LookupEnv(fmt.Sprintf("%v_CLUSTER", grafanaPDCEnvVarPrefix))
+	if ok && (mf.Cluster == "") {
+		mf.Cluster = clusterEnvVar
+	}
 }
 
 func logLevelToSSHLogLevel(level string) (int, error) {
@@ -100,21 +107,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Allow overrides of _some_ empty flags with environment variables
-	clusterEnvVar, ok := os.LookupEnv("GCLOUD_PDC_CLUSTER")
-	if ok && (mf.Cluster == "") {
-		mf.Cluster = clusterEnvVar
-	}
-
-	signingTokenEnvVar, ok := os.LookupEnv("GCLOUD_PDC_SIGNING_TOKEN")
-	if ok && (pdcClientCfg.Token == "") {
-		pdcClientCfg.Token = signingTokenEnvVar
-	}
-
-	hostedGrafanaIDEnvVar, ok := os.LookupEnv("GCLOUD_HOSTED_GRAFANA_ID")
-	if ok && (pdcClientCfg.HostedGrafanaID == "") {
-		pdcClientCfg.HostedGrafanaID = hostedGrafanaIDEnvVar
-	}
+	pdcClientCfg.ApplyEnvironment(grafanaPDCEnvVarPrefix)
+	mf.ApplyEnvironment(grafanaPDCEnvVarPrefix)
+	sshConfig.ApplyEnvironment(grafanaPDCEnvVarPrefix)
 
 	sshConfig.Args = os.Args[1:]
 	sshConfig.LogLevel, err = logLevelToSSHLogLevel(mf.LogLevel)
@@ -122,57 +117,6 @@ func main() {
 		usageFn()
 		fmt.Printf("setting log level: %s\n", err)
 		os.Exit(1)
-	}
-
-	sshKeyFileEnvVar, ok := os.LookupEnv("GCLOUD_SSH_KEY_FILE")
-	if ok && (sshConfig.KeyFile == ssh.DefaultConfig().KeyFile) {
-		sshConfig.KeyFile = sshKeyFileEnvVar
-	}
-
-	// Using the same logic as the `ssh.Config` definition, clamping to max of 3
-	sshLogLevelSelectEnvVar, ok := os.LookupEnv("GCLOUD_SSH_LOG_LEVEL")
-	parsedSSHLogLevelSelectEnvVar, parseIntErr := strconv.Atoi(sshLogLevelSelectEnvVar)
-	if ok &&
-		parseIntErr == nil &&
-		(sshConfig.LogLevel > 3 || sshConfig.LogLevel < 1) &&
-		(parsedSSHLogLevelSelectEnvVar < 3 && parsedSSHLogLevelSelectEnvVar >= 0) {
-		sshConfig.LogLevel = parsedSSHLogLevelSelectEnvVar
-	}
-
-	skipSSHValidationEnvVar, ok := os.LookupEnv("GCLOUD_SSH_SKIP_SSH_VALIDATION")
-	parsedSSHValidationEnvVar, parseBoolErr := strconv.ParseBool(skipSSHValidationEnvVar)
-	if ok && parseBoolErr == nil && !sshConfig.SkipSSHValidation {
-		sshConfig.SkipSSHValidation = parsedSSHValidationEnvVar
-	}
-
-	// We're actually going to append the values provided here to the already-parsed SSHFlags array
-	// As the argument can be provided more than once, this feels like the most compatible option
-	additionalSSHFlagsEnvVar, ok := os.LookupEnv("GCLOUD_SSH_ADDITIONAL_SSHFLAGS")
-	if ok {
-		sshConfig.SSHFlags = append(sshConfig.SSHFlags, strings.Split(additionalSSHFlagsEnvVar, " ")...)
-	}
-
-	sshForceKeyFileOverwriteEnvVar, ok := os.LookupEnv("GCLOUD_SSH_FORCE_KEY_FILE_OVERWRITE")
-	parsedSSHForceKeyFileOverwriteEnvVar, parseBoolErr := strconv.ParseBool(sshForceKeyFileOverwriteEnvVar)
-	if ok && parseBoolErr == nil && !sshConfig.ForceKeyFileOverwrite {
-		sshConfig.ForceKeyFileOverwrite = parsedSSHForceKeyFileOverwriteEnvVar
-	}
-
-	sshCertExpiryWindowEnvVar, ok := os.LookupEnv("GCLOUD_SSH_CERT_EXPIRY_WINDOW")
-	parsedSSHCertExpiryWindowEnvVar, parseTimeErr := time.ParseDuration(sshCertExpiryWindowEnvVar)
-	if ok && parseTimeErr == nil && (sshConfig.CertExpiryWindow == time.Duration(5)*time.Minute) {
-		sshConfig.CertExpiryWindow = parsedSSHCertExpiryWindowEnvVar
-	}
-
-	sshCheckCertExpiryPeriod, ok := os.LookupEnv("GCLOUD_SSH_CERT_CHECK_EXPIRY_PERIOD")
-	parsedSSHCheckCertExpiryPeriod, parseTimeErr := time.ParseDuration(sshCheckCertExpiryPeriod)
-	if ok && parseTimeErr == nil && (sshConfig.CertCheckCertExpiryPeriod == time.Duration(1)*time.Minute) {
-		sshConfig.CertCheckCertExpiryPeriod = parsedSSHCheckCertExpiryPeriod
-	}
-
-	sshMetricsAddr, ok := os.LookupEnv("GCLOUD_SSH_METRICS_ADDR")
-	if ok && (sshConfig.MetricsAddr == ":8090") {
-		sshConfig.MetricsAddr = sshMetricsAddr
 	}
 
 	logger := setupLogger(mf.LogLevel)
