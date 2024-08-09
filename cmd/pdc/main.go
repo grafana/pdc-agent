@@ -43,6 +43,9 @@ type mainFlags struct {
 	Cluster   string
 	Domain    string
 
+	APIFQDN     string
+	GatewayFQDN string
+
 	// The fields below were added to make local development easier.
 	//
 	// DevMode is true when the agent is being run locally while someone is working on it.
@@ -54,8 +57,11 @@ func (mf *mainFlags) RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&mf.LogLevel, "log.level", logLevelinfo, `"debug", "info", "warn" or "error"`)
 	fs.StringVar(&mf.Cluster, "cluster", "", "the PDC cluster to connect to use")
 	fs.StringVar(&mf.Domain, "domain", "grafana.net", "the domain of the PDC cluster")
-	fs.BoolVar(&mf.DevMode, "dev-mode", false, "[DEVELOPMENT ONLY] run the agent in development mode")
 
+	fs.StringVar(&mf.APIFQDN, "api-fqdn", "", "FQDN for the PDC API. If set, this will take precedence over the cluster and domain flags")
+	fs.StringVar(&mf.GatewayFQDN, "gateway-fqdn", "", "FQDN for the PDC Gateway. If set, this will take precedence over the cluster and domain flags")
+
+	fs.BoolVar(&mf.DevMode, "dev-mode", false, "[DEVELOPMENT ONLY] run the agent in development mode")
 }
 
 func logLevelToSSHLogLevel(level string) (int, error) {
@@ -133,7 +139,7 @@ func main() {
 		return
 	}
 
-	apiURL, gatewayURL, err := createURLsFromCluster(mf.Cluster, mf.Domain)
+	apiURL, gatewayURL, err := createURLs(mf)
 	if err != nil {
 		level.Error(logger).Log("err", err)
 		os.Exit(1)
@@ -202,9 +208,17 @@ func run(logger log.Logger, sshConfig *ssh.Config, pdcConfig *pdc.Config) error 
 	return nil
 }
 
-func createURLsFromCluster(cluster string, domain string) (api *url.URL, gateway *url.URL, err error) {
-	apiURL := fmt.Sprintf("https://private-datasource-connect-api-%s.%s", cluster, domain)
-	gatewayURL := fmt.Sprintf("private-datasource-connect-%s.%s", cluster, domain)
+func createURLs(cfg *mainFlags) (api *url.URL, gateway *url.URL, err error) {
+	apiURL := fmt.Sprintf("https://private-datasource-connect-api-%s.%s", cfg.Cluster, cfg.Domain)
+	gatewayURL := fmt.Sprintf("private-datasource-connect-%s.%s", cfg.Cluster, cfg.Domain)
+
+	if cfg.APIFQDN != "" {
+		apiURL = "https://" + cfg.APIFQDN
+	}
+
+	if cfg.GatewayFQDN != "" {
+		gatewayURL = cfg.GatewayFQDN
+	}
 
 	api, err = url.Parse(apiURL)
 	if err != nil {
