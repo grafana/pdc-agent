@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/pdc-agent/pkg/metrics"
 	"github.com/grafana/pdc-agent/pkg/pdc"
 	"github.com/grafana/pdc-agent/pkg/ssh"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // Values set by goreleaser during the build process using ldflags.
@@ -124,6 +125,9 @@ func main() {
 		"arch", runtime.GOARCH,
 	)
 
+	m := newPromMetrics()
+	m.agentInfo.WithLabelValues(tryGetOpenSSHVersion(), version, pdcClientCfg.HostedGrafanaID).Set(1)
+
 	if mf.PrintHelp {
 		usageFn()
 		return
@@ -185,6 +189,13 @@ func run(logger log.Logger, sshConfig *ssh.Config, pdcConfig *pdc.Config) error 
 	if err != nil {
 		level.Error(logger).Log("msg", fmt.Sprintf("cannot initialise PDC client: %s", err))
 		return err
+	}
+
+	if p, ok := pdcClient.(prometheus.Collector); ok {
+		err = prometheus.Register(p)
+		if err != nil {
+			return err
+		}
 	}
 
 	km := ssh.NewKeyManager(sshConfig, logger, pdcClient)
@@ -291,4 +302,23 @@ func setupLogger(lvl string) log.Logger {
 	logger = log.With(logger, "ts", log.DefaultTimestamp)
 
 	return logger
+}
+
+type promMetrics struct {
+	agentInfo *prometheus.GaugeVec
+}
+
+func newPromMetrics() *promMetrics {
+	m := &promMetrics{
+		agentInfo: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "agent_info",
+				Help: "Information about the agent version, SSH version and stack ID",
+			},
+			[]string{"version", "ssh_version", "stack_id"},
+		),
+	}
+
+	prometheus.MustRegister(m.agentInfo)
+	return m
 }
