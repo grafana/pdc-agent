@@ -126,7 +126,7 @@ func main() {
 	)
 
 	m := newPromMetrics()
-	m.agentInfo.WithLabelValues(tryGetOpenSSHVersion(), version, pdcClientCfg.HostedGrafanaID).Set(1)
+	m.agentInfo.WithLabelValues( version, tryGetOpenSSHVersion(), pdcClientCfg.HostedGrafanaID).Set(1)
 
 	if mf.PrintHelp {
 		usageFn()
