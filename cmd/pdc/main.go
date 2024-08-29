@@ -125,9 +125,6 @@ func main() {
 		"arch", runtime.GOARCH,
 	)
 
-	m := newPromMetrics()
-	m.agentInfo.WithLabelValues( version, tryGetOpenSSHVersion(), pdcClientCfg.HostedGrafanaID).Set(1)
-
 	if mf.PrintHelp {
 		usageFn()
 		return
@@ -191,17 +188,23 @@ func run(logger log.Logger, sshConfig *ssh.Config, pdcConfig *pdc.Config) error 
 		return err
 	}
 
-	if p, ok := pdcClient.(prometheus.Collector); ok {
-		err = prometheus.Register(p)
-		if err != nil {
-			return err
-		}
-	}
-
 	km := ssh.NewKeyManager(sshConfig, logger, pdcClient)
 
 	// Create the SSH Service. KeyManager must be in running state when passed to ssh.NewClient
 	sshClient := ssh.NewClient(sshConfig, logger, km)
+
+	// Register prometheus metrics
+	m := newPromMetrics()
+	prometheus.MustRegister(m.agentInfo)
+	prometheus.MustRegister(sshClient)
+
+	//sshClient.RegisterMetrics()
+	if p, ok := pdcClient.(prometheus.Collector); ok {
+		prometheus.MustRegister(p)
+	}
+
+	m.agentInfo.WithLabelValues(version, tryGetOpenSSHVersion(), pdcConfig.HostedGrafanaID).Set(1)
+
 	// Start the ssh client
 	err = services.StartAndAwaitRunning(ctx, sshClient)
 	if err != nil {
@@ -309,16 +312,14 @@ type promMetrics struct {
 }
 
 func newPromMetrics() *promMetrics {
-	m := &promMetrics{
+	return &promMetrics{
 		agentInfo: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
-				Name: "agent_info",
-				Help: "Information about the agent version, SSH version and stack ID",
+				Name:      "agent_info",
+				Help:      "Information about the agent version, SSH version and stack ID",
+				Namespace: "pdc_agent",
 			},
 			[]string{"version", "ssh_version", "stack_id"},
 		),
 	}
-
-	prometheus.MustRegister(m.agentInfo)
-	return m
 }

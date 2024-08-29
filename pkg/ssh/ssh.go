@@ -130,10 +130,20 @@ func NewClient(cfg *Config, logger log.Logger, km *KeyManager) *Client {
 	return client
 }
 
+//func (s *Client) RegisterMetrics() {
+//	prometheus.MustRegister(s.metrics.sshRestartsCount)
+//}
+
+func (s *Client) Collect(ch chan<- prometheus.Metric) {
+	s.metrics.sshRestartsCount.Collect(ch)
+}
+
+func (s *Client) Describe(ch chan<- *prometheus.Desc) {
+	s.metrics.sshRestartsCount.Describe(ch)
+}
+
 func (s *Client) starting(ctx context.Context) error {
 	level.Info(s.logger).Log("msg", "starting ssh client")
-
-	prometheus.MustRegister(s.metrics.sshRestartsCount)
 
 	if !s.cfg.SkipSSHValidation {
 		if err := validateSSHVersion(ctx, s.logger, s.SSHCmd); err != nil {

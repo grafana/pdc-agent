@@ -7,15 +7,14 @@ type promMetrics struct {
 }
 
 func newPromMetrics() *promMetrics {
-	m := &promMetrics{
+	return &promMetrics{
 		sshRestartsCount: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "ssh_restarts_total",
-				Help: "Total number of SSH restarts",
+				Name:      "ssh_restarts_total",
+				Help:      "Total number of SSH restarts",
+				Namespace: "pdc_agent",
 			},
 			[]string{"exit_code"},
 		),
 	}
-
-	return m
 }
