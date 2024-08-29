@@ -130,10 +130,6 @@ func NewClient(cfg *Config, logger log.Logger, km *KeyManager) *Client {
 	return client
 }
 
-//func (s *Client) RegisterMetrics() {
-//	prometheus.MustRegister(s.metrics.sshRestartsCount)
-//}
-
 func (s *Client) Collect(ch chan<- prometheus.Metric) {
 	s.metrics.sshRestartsCount.Collect(ch)
 }

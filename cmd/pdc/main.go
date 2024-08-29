@@ -197,8 +197,6 @@ func run(logger log.Logger, sshConfig *ssh.Config, pdcConfig *pdc.Config) error 
 	m := newPromMetrics()
 	prometheus.MustRegister(m.agentInfo)
 	prometheus.MustRegister(sshClient)
-
-	//sshClient.RegisterMetrics()
 	if p, ok := pdcClient.(prometheus.Collector); ok {
 		prometheus.MustRegister(p)
 	}
