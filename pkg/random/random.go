@@ -6,15 +6,15 @@ import (
 )
 
 // Generates a number between min and max inclusive.
-func Range(min, max int) int {
-	if min > max {
-		panic(fmt.Sprintf("min cannot be greater than max: min=%d max=%d", min, max))
+func Range(minVal, maxVal int) int {
+	if minVal > maxVal {
+		panic(fmt.Sprintf("min cannot be greater than max: min=%d max=%d", minVal, maxVal))
 	}
 
-	if min == max {
-		return min
+	if minVal == maxVal {
+		return minVal
 	}
 
-	n := min + rand.Intn(max-min+1)
+	n := minVal + rand.Intn(maxVal-minVal+1)
 	return n
 }

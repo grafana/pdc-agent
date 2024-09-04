@@ -13,12 +13,13 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/pdc-agent/pkg/httpclient"
 	"github.com/hashicorp/go-retryablehttp"
-
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -138,6 +139,7 @@ func NewClient(cfg *Config, logger log.Logger) (Client, error) {
 		cfg:        cfg,
 		httpClient: hc,
 		logger:     logger,
+		metrics:    newPromMetrics(),
 	}, nil
 }
 
@@ -145,15 +147,21 @@ type pdcClient struct {
 	cfg        *Config
 	httpClient *http.Client
 	logger     log.Logger
+	metrics    *promMetrics
 }
 
 func (c *pdcClient) SignSSHKey(ctx context.Context, key []byte) (*SigningResponse, error) {
+	start := time.Now()
+
 	resp, err := c.call(ctx, http.MethodPost, c.cfg.SignPublicKeyEndpoint, nil, map[string]string{
 		"publicKey": string(key),
 	})
 	if err != nil {
+		c.metrics.signingRequests.WithLabelValues("error").Observe(time.Since(start).Seconds())
 		return nil, err
 	}
+
+	c.metrics.signingRequests.WithLabelValues("success").Observe(time.Since(start).Seconds())
 
 	sr := &SigningResponse{}
 	err = sr.UnmarshalJSON(resp)
@@ -165,7 +173,6 @@ func (c *pdcClient) SignSSHKey(ctx context.Context, key []byte) (*SigningRespons
 }
 
 func (c *pdcClient) call(ctx context.Context, method, rpath string, params map[string]string, body map[string]string) ([]byte, error) {
-
 	url := *c.cfg.URL
 	url.Path = path.Join(url.Path, rpath)
 
@@ -223,6 +230,14 @@ func (c *pdcClient) call(ctx context.Context, method, rpath string, params map[s
 		level.Error(c.logger).Log("msg", "unknown response from PDC API", "code", resp.StatusCode)
 		return respB, ErrInternal
 	}
+}
+
+func (c *pdcClient) Collect(ch chan<- prometheus.Metric) {
+	c.metrics.signingRequests.Collect(ch)
+}
+
+func (c *pdcClient) Describe(ch chan<- *prometheus.Desc) {
+	c.metrics.signingRequests.Describe(ch)
 }
 
 type logAdapter struct {

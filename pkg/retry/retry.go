@@ -31,9 +31,9 @@ func Forever(opts Opts, f func() error) {
 		maxBackoff := opts.MaxBackoff.Seconds()
 		initialBackoff := opts.InitialBackoff.Seconds()
 
-		max := int(min(maxBackoff, initialBackoff*math.Pow(2, float64(attempt))))
+		maxVal := int(min(maxBackoff, initialBackoff*math.Pow(2, float64(attempt))))
 
-		duration := random.Range(0, max)
+		duration := random.Range(0, maxVal)
 
 		time.Sleep(time.Duration(duration) * time.Second)
 

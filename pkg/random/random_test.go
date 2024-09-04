@@ -29,15 +29,15 @@ func TestRange(t *testing.T) {
 	})
 
 	t.Run("only generates numbers between the min and max", rapid.MakeCheck(func(t *rapid.T) {
-		a := rapid.IntRange(0, math.MaxInt-1).Draw(t, "min")
-		b := rapid.IntRange(0, math.MaxInt-1).Draw(t, "max")
+		a := rapid.IntRange(0, math.MaxInt-1).Draw(t, "minVal")
+		b := rapid.IntRange(0, math.MaxInt-1).Draw(t, "maxVal")
 
-		min := min(a, b)
-		max := max(a, b)
+		minVal := min(a, b)
+		maxVal := max(a, b)
 
-		n := Range(min, max)
+		n := Range(minVal, maxVal)
 
-		assert.True(t, n >= min)
-		assert.True(t, n <= max)
+		assert.True(t, n >= minVal)
+		assert.True(t, n <= maxVal)
 	}))
 }

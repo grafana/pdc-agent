@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/pdc-agent/pkg/pdc"
 	"github.com/grafana/pdc-agent/pkg/retry"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
@@ -108,23 +109,33 @@ func (cfg *Config) addSSHFlag(s string) error {
 // Client is a client for ssh. It configures and runs ssh commands
 type Client struct {
 	*services.BasicService
-	cfg    *Config
-	SSHCmd string // SSH command to run, defaults to "ssh". Require for testing.
-	logger log.Logger
-	km     *KeyManager
+	cfg     *Config
+	SSHCmd  string // SSH command to run, defaults to "ssh". Require for testing.
+	logger  log.Logger
+	km      *KeyManager
+	metrics *promMetrics
 }
 
 // NewClient returns a new SSH client in an idle state
 func NewClient(cfg *Config, logger log.Logger, km *KeyManager) *Client {
 	client := &Client{
-		cfg:    cfg,
-		SSHCmd: "ssh",
-		logger: logger,
-		km:     km,
+		cfg:     cfg,
+		SSHCmd:  "ssh",
+		logger:  logger,
+		km:      km,
+		metrics: newPromMetrics(),
 	}
 
 	client.BasicService = services.NewIdleService(client.starting, client.stopping)
 	return client
+}
+
+func (s *Client) Collect(ch chan<- prometheus.Metric) {
+	s.metrics.sshRestartsCount.Collect(ch)
+}
+
+func (s *Client) Describe(ch chan<- *prometheus.Desc) {
+	s.metrics.sshRestartsCount.Describe(ch)
 }
 
 func (s *Client) starting(ctx context.Context) error {
@@ -176,7 +187,9 @@ func (s *Client) starting(ctx context.Context) error {
 			os.Exit(1)
 		}
 
-		level.Info(s.logger).Log("msg", "ssh client exited. restarting", "exitCode", cmd.ProcessState.ExitCode())
+		exitCode := cmd.ProcessState.ExitCode()
+		level.Info(s.logger).Log("msg", "ssh client exited. restarting", "exitCode", exitCode)
+		s.metrics.sshRestartsCount.WithLabelValues(fmt.Sprintf("%d", exitCode)).Inc()
 
 		// Check keys and cert validity before restart, create new cert if required.
 		// This covers the case where a certificate has become invalid since the last start.

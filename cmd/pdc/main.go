@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/pdc-agent/pkg/metrics"
 	"github.com/grafana/pdc-agent/pkg/pdc"
 	"github.com/grafana/pdc-agent/pkg/ssh"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // Values set by goreleaser during the build process using ldflags.
@@ -191,6 +192,17 @@ func run(logger log.Logger, sshConfig *ssh.Config, pdcConfig *pdc.Config) error 
 
 	// Create the SSH Service. KeyManager must be in running state when passed to ssh.NewClient
 	sshClient := ssh.NewClient(sshConfig, logger, km)
+
+	// Register prometheus metrics
+	m := newPromMetrics()
+	prometheus.MustRegister(m.agentInfo)
+	prometheus.MustRegister(sshClient)
+	if p, ok := pdcClient.(prometheus.Collector); ok {
+		prometheus.MustRegister(p)
+	}
+
+	m.agentInfo.WithLabelValues(version, tryGetOpenSSHVersion(), pdcConfig.HostedGrafanaID).Set(1)
+
 	// Start the ssh client
 	err = services.StartAndAwaitRunning(ctx, sshClient)
 	if err != nil {
@@ -291,4 +303,21 @@ func setupLogger(lvl string) log.Logger {
 	logger = log.With(logger, "ts", log.DefaultTimestamp)
 
 	return logger
+}
+
+type promMetrics struct {
+	agentInfo *prometheus.GaugeVec
+}
+
+func newPromMetrics() *promMetrics {
+	return &promMetrics{
+		agentInfo: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name:      "agent_info",
+				Help:      "Information about the agent version, SSH version and stack ID",
+				Namespace: "pdc_agent",
+			},
+			[]string{"version", "ssh_version", "stack_id"},
+		),
+	}
 }
