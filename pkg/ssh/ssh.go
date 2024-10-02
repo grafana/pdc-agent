@@ -29,6 +29,7 @@ const (
 	// The exit code sent by the pdc server when the connection limit is reached.
 	ConnectionLimitReachedCode  = 254
 	ConnectionAlreadyExistsCode = 253
+	sshDebugLvl                 = 3
 )
 
 // Config represents all configurable properties of the ssh package.
@@ -82,7 +83,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.KeyFile, "ssh-key-file", def.KeyFile, "The path to the SSH key file.")
 	f.IntVar(&deprecatedInt, "log-level", def.LogLevel, "[DEPRECATED] Use the log.level flag. The level of log verbosity. The maximum is 3.")
 	// use default log level if invalid
-	if cfg.LogLevel > 3 {
+	if cfg.LogLevel > sshDebugLvl {
 		cfg.LogLevel = def.LogLevel
 	}
 	f.BoolVar(&cfg.SkipSSHValidation, "skip-ssh-validation", false, "Ignore openssh minimum version constraints.")
@@ -169,7 +170,7 @@ func (s *Client) starting(ctx context.Context) error {
 	retryOpts := retry.Opts{MaxBackoff: 16 * time.Second, InitialBackoff: 1 * time.Second}
 	go retry.Forever(retryOpts, func() error {
 		cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
-		loggerWriter := newLoggerWriterAdapter(s.logger)
+		loggerWriter := newLoggerWriterAdapter(s.logger, s.cfg.LogLevel)
 		cmd.Stdout = loggerWriter
 		cmd.Stderr = loggerWriter
 		_ = cmd.Run()
@@ -227,11 +228,6 @@ func (s *Client) SSHFlagsFromConfig() ([]string, error) {
 	keyFileArr := strings.Split(s.cfg.KeyFile, "/")
 	keyFileDir := strings.Join(keyFileArr[:len(keyFileArr)-1], "/")
 
-	logLevelFlag := ""
-	if s.cfg.LogLevel > 0 {
-		logLevelFlag = "-" + strings.Repeat("v", s.cfg.LogLevel)
-	}
-
 	gwURL := s.cfg.URL
 	user := fmt.Sprintf("%s@%s", s.cfg.PDC.HostedGrafanaID, gwURL.String())
 
@@ -243,7 +239,7 @@ func (s *Client) SSHFlagsFromConfig() ([]string, error) {
 		"ConnectTimeout":      "1",
 	}
 
-	nonOptionFlags := []string{} // for backwards compatibility, on -v particularly
+	nonOptionFlags := []string{} // for backwards compatibility
 	for _, f := range s.cfg.SSHFlags {
 		name, value, err := extractOptionFromFlag(f)
 		if err != nil {
@@ -276,11 +272,11 @@ func (s *Client) SSHFlagsFromConfig() ([]string, error) {
 		result = append(result, "-o", fmt.Sprintf("%s=%s", o, sshOptions[o]))
 	}
 
-	if logLevelFlag != "" {
-		result = append(result, logLevelFlag)
-	}
-
 	result = append(result, nonOptionFlags...)
+
+	// TODO: move where nonOptionFlags are declared?
+	// Always pass -vvv to ssh to get verbose output, which is needed to create metrics from logs.
+	result = append(result, "-vvv")
 
 	return result, nil
 }
@@ -301,11 +297,13 @@ func extractOptionFromFlag(flag string) (string, string, error) {
 // Wraps a logger, implements io.Writer and writes to the logger.
 type loggerWriterAdapter struct {
 	logger log.Logger
+	level  int
 }
 
-func newLoggerWriterAdapter(logger log.Logger) loggerWriterAdapter {
+func newLoggerWriterAdapter(logger log.Logger, level int) loggerWriterAdapter {
 	return loggerWriterAdapter{
 		logger: logger,
+		level:  level,
 	}
 }
 
@@ -318,6 +316,11 @@ func (adapter loggerWriterAdapter) Write(p []byte) (n int, err error) {
 	// msg="debug2: some message"
 	for _, msg := range bytes.Split(p, []byte{'\r', '\n'}) {
 		if len(msg) == 0 {
+			continue
+		}
+
+		// Do not log debug messages if the log level is not debug.
+		if adapter.level < sshDebugLvl && strings.HasPrefix(string(msg), "debug") {
 			continue
 		}
 
