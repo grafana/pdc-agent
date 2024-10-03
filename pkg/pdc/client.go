@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"time"
 
@@ -66,6 +67,18 @@ func (cfg *Config) RegisterFlags(fs *flag.FlagSet) {
 
 	fs.StringVar(&cfg.DevNetwork, "dev-network", "", "[DEVELOPMENT ONLY] the network the agent will connect to")
 	fs.StringVar(&cfg.DevPort, "dev-api-port", "9181", "[DEVELOPMENT ONLY] The port to use for agent connections to the PDC API")
+}
+
+func (cfg *Config) ApplyEnvironment(grafanaPDCEnvVarPrefix string) {
+	signingTokenEnvVar, ok := os.LookupEnv(fmt.Sprintf("%v_SIGNING_TOKEN", grafanaPDCEnvVarPrefix))
+	if ok && (cfg.Token == "") {
+		cfg.Token = signingTokenEnvVar
+	}
+
+	hostedGrafanaIDEnvVar, ok := os.LookupEnv(fmt.Sprintf("%v_HOSTED_GRAFANA_ID", grafanaPDCEnvVarPrefix))
+	if ok && (cfg.HostedGrafanaID == "") {
+		cfg.HostedGrafanaID = hostedGrafanaIDEnvVar
+	}
 }
 
 // Client is a PDC API client

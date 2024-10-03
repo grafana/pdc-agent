@@ -37,6 +37,7 @@ var (
 )
 
 const logLevelinfo = "info"
+const grafanaPDCEnvVarPrefix = "GCLOUD_PDC"
 
 type mainFlags struct {
 	PrintHelp bool
@@ -63,6 +64,13 @@ func (mf *mainFlags) RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&mf.GatewayFQDN, "gateway-fqdn", "", "FQDN for the PDC Gateway. If set, this will take precedence over the cluster and domain flags")
 
 	fs.BoolVar(&mf.DevMode, "dev-mode", false, "[DEVELOPMENT ONLY] run the agent in development mode")
+}
+
+func (mf *mainFlags) ApplyEnvironment(grafanaPDCEnvVarPrefix string) {
+	clusterEnvVar, ok := os.LookupEnv(fmt.Sprintf("%v_CLUSTER", grafanaPDCEnvVarPrefix))
+	if ok && (mf.Cluster == "") {
+		mf.Cluster = clusterEnvVar
+	}
 }
 
 func logLevelToSSHLogLevel(level string) (int, error) {
@@ -105,6 +113,10 @@ func main() {
 		fmt.Println("cannot parse flags")
 		os.Exit(1)
 	}
+
+	pdcClientCfg.ApplyEnvironment(grafanaPDCEnvVarPrefix)
+	mf.ApplyEnvironment(grafanaPDCEnvVarPrefix)
+	sshConfig.ApplyEnvironment(grafanaPDCEnvVarPrefix)
 
 	sshConfig.Args = os.Args[1:]
 	sshConfig.LogLevel, err = logLevelToSSHLogLevel(mf.LogLevel)
