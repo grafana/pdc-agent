@@ -2,6 +2,7 @@ package retry
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"time"
 
@@ -9,8 +10,9 @@ import (
 )
 
 type Opts struct {
-	MaxBackoff     time.Duration
-	InitialBackoff time.Duration
+	MaxBackoff          time.Duration
+	InitialBackoff      time.Duration
+	ResetWhenRunningFor time.Duration
 }
 
 // Forever calls a function until it succeeds, waiting an exponentially increasing amount of time between calls.
@@ -19,7 +21,34 @@ func Forever(opts Opts, f func() error) {
 	attempt := 1
 
 	for {
-		err := f()
+
+		fdone := make(chan error)
+		reset := make(chan struct{})
+
+		go func(c chan error) {
+			err := f()
+			c <- err
+		}(fdone)
+
+		go func(c chan struct{}) {
+			<-time.After(opts.ResetWhenRunningFor)
+			c <- struct{}{}
+		}(reset)
+
+		var err error
+
+	out:
+		for {
+			select {
+			case <-reset:
+				fmt.Println("resetting backoff!")
+				attempt = 1
+			case ferr := <-fdone:
+				err = ferr
+				break out
+			}
+		}
+
 		if err != nil && errors.Is(err, ResetBackoffError{}) {
 			attempt = 1
 		}

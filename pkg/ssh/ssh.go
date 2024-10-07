@@ -56,6 +56,8 @@ type Config struct {
 	// Used for local development.
 	// DevPort is the port number for the PDC gateway
 	DevPort int
+
+	ExponentialBackoffReset time.Duration
 }
 
 // DefaultConfig returns a Config with some sensible defaults set
@@ -84,6 +86,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.CertExpiryWindow, "cert-expiry-window", 5*time.Minute, "The time before the certificate expires to renew it.")
 	f.DurationVar(&cfg.CertCheckCertExpiryPeriod, "cert-check-expiry-period", 1*time.Minute, "How often to check certificate validity. 0 means it is only checked at start")
 	f.StringVar(&cfg.MetricsAddr, "metrics-addr", ":8090", "HTTP server address to expose metrics on")
+
+	f.DurationVar(&cfg.ExponentialBackoffReset, "ssh-exp-backoff-reset", 1*time.Minute, "Reset the SSH exponential backoff if the SSH connection has been open for this long")
 
 	f.IntVar(&cfg.DevPort, "dev-ssh-port", 2244, "[DEVELOPMENT ONLY] The port to use for agent connections to the PDC SSH gateway")
 
@@ -159,7 +163,7 @@ func (s *Client) starting(ctx context.Context) error {
 	}
 	level.Debug(s.logger).Log("msg", fmt.Sprintf("parsed flags: %s", flags))
 
-	retryOpts := retry.Opts{MaxBackoff: 16 * time.Second, InitialBackoff: 1 * time.Second}
+	retryOpts := retry.Opts{MaxBackoff: 16 * time.Second, InitialBackoff: 1 * time.Second, ResetWhenRunningFor: s.cfg.ExponentialBackoffReset}
 	go retry.Forever(retryOpts, func() error {
 		cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
 		loggerWriter := newLoggerWriterAdapter(s.logger, s.cfg.LogLevel)
