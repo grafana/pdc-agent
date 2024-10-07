@@ -38,7 +38,7 @@ type Config struct {
 	KeyFile           string
 	SSHFlags          []string // Additional flags to be passed to ssh(1). e.g. --ssh-flag="-vvv" --ssh-flag="-L 80:localhost:80"
 	Port              int
-	LogLevel          int
+	LogLevel          string
 	PDC               pdc.Config
 	LegacyMode        bool
 	SkipSSHValidation bool
@@ -67,24 +67,17 @@ func DefaultConfig() *Config {
 	}
 	return &Config{
 		Port:     22,
-		LogLevel: 2,
 		PDC:      pdc.Config{},
+		LogLevel: "info",
 		KeyFile:  path.Join(root, ".ssh/grafana_pdc"),
 	}
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	var deprecatedInt int
-
 	def := DefaultConfig()
 
 	cfg.SSHFlags = []string{}
 	f.StringVar(&cfg.KeyFile, "ssh-key-file", def.KeyFile, "The path to the SSH key file.")
-	f.IntVar(&deprecatedInt, "log-level", def.LogLevel, "[DEPRECATED] Use the log.level flag. The level of log verbosity. The maximum is 3.")
-	// use default log level if invalid
-	if cfg.LogLevel > 3 {
-		cfg.LogLevel = def.LogLevel
-	}
 	f.BoolVar(&cfg.SkipSSHValidation, "skip-ssh-validation", false, "Ignore openssh minimum version constraints.")
 	f.Func("ssh-flag", "Additional flags to be passed to ssh. Can be set more than once.", cfg.addSSHFlag)
 	f.BoolVar(&cfg.ForceKeyFileOverwrite, "force-key-file-overwrite", false, "Force a new ssh key pair to be generated")
@@ -169,7 +162,7 @@ func (s *Client) starting(ctx context.Context) error {
 	retryOpts := retry.Opts{MaxBackoff: 16 * time.Second, InitialBackoff: 1 * time.Second}
 	go retry.Forever(retryOpts, func() error {
 		cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
-		loggerWriter := newLoggerWriterAdapter(s.logger)
+		loggerWriter := newLoggerWriterAdapter(s.logger, s.cfg.LogLevel)
 		cmd.Stdout = loggerWriter
 		cmd.Stderr = loggerWriter
 		_ = cmd.Run()
@@ -227,11 +220,6 @@ func (s *Client) SSHFlagsFromConfig() ([]string, error) {
 	keyFileArr := strings.Split(s.cfg.KeyFile, "/")
 	keyFileDir := strings.Join(keyFileArr[:len(keyFileArr)-1], "/")
 
-	logLevelFlag := ""
-	if s.cfg.LogLevel > 0 {
-		logLevelFlag = "-" + strings.Repeat("v", s.cfg.LogLevel)
-	}
-
 	gwURL := s.cfg.URL
 	user := fmt.Sprintf("%s@%s", s.cfg.PDC.HostedGrafanaID, gwURL.String())
 
@@ -244,7 +232,7 @@ func (s *Client) SSHFlagsFromConfig() ([]string, error) {
 		"TCPKeepAlive":        "no",
 	}
 
-	nonOptionFlags := []string{} // for backwards compatibility, on -v particularly
+	nonOptionFlags := []string{} // for backwards compatibility
 	for _, f := range s.cfg.SSHFlags {
 		name, value, err := extractOptionFromFlag(f)
 		if err != nil {
@@ -277,11 +265,10 @@ func (s *Client) SSHFlagsFromConfig() ([]string, error) {
 		result = append(result, "-o", fmt.Sprintf("%s=%s", o, sshOptions[o]))
 	}
 
-	if logLevelFlag != "" {
-		result = append(result, logLevelFlag)
-	}
-
 	result = append(result, nonOptionFlags...)
+
+	// Always pass -vvv to ssh to get verbose output, which is needed to create metrics from logs.
+	result = append(result, "-vvv")
 
 	return result, nil
 }
@@ -302,11 +289,13 @@ func extractOptionFromFlag(flag string) (string, string, error) {
 // Wraps a logger, implements io.Writer and writes to the logger.
 type loggerWriterAdapter struct {
 	logger log.Logger
+	level  string
 }
 
-func newLoggerWriterAdapter(logger log.Logger) loggerWriterAdapter {
+func newLoggerWriterAdapter(logger log.Logger, level string) loggerWriterAdapter {
 	return loggerWriterAdapter{
 		logger: logger,
+		level:  level,
 	}
 }
 
@@ -319,6 +308,11 @@ func (adapter loggerWriterAdapter) Write(p []byte) (n int, err error) {
 	// msg="debug2: some message"
 	for _, msg := range bytes.Split(p, []byte{'\r', '\n'}) {
 		if len(msg) == 0 {
+			continue
+		}
+
+		// Do not log debug messages if the log level is not debug.
+		if adapter.level != "debug" && strings.HasPrefix(string(msg), "debug") {
 			continue
 		}
 

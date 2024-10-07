@@ -146,7 +146,7 @@ func TestClient_SSHArgs(t *testing.T) {
 		result, err := sshClient.SSHFlagsFromConfig()
 
 		assert.Nil(t, err)
-		assert.Equal(t, strings.Split(fmt.Sprintf("-i %s 123@host.grafana.net -p 22 -R 0 -o CertificateFile=%s -o ConnectTimeout=1 -o ServerAliveInterval=15 -o TCPKeepAlive=no -o UserKnownHostsFile=%s -vv", cfg.KeyFile, cfg.KeyFile+certSuffix, path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile)), " "), result)
+		assert.Equal(t, strings.Split(fmt.Sprintf("-i %s 123@host.grafana.net -p 22 -R 0 -o CertificateFile=%s -o ConnectTimeout=1 -o ServerAliveInterval=15 -o TCPKeepAlive=no -o UserKnownHostsFile=%s -vvv", cfg.KeyFile, cfg.KeyFile+certSuffix, path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile)), " "), result)
 	})
 
 	t.Run("legacy args (deprecated)", func(t *testing.T) {
@@ -173,7 +173,6 @@ func TestClient_SSHArgs(t *testing.T) {
 		}
 
 		cfg.SSHFlags = []string{
-			"-vvv",
 			"-o TestOption=2",
 			"-o PermitRemoteOpen=host:123 host:456",
 			"-o ConnectTimeout=3",
@@ -198,57 +197,7 @@ func TestClient_SSHArgs(t *testing.T) {
 			"-o", "TCPKeepAlive=no",
 			"-o", "TestOption=2",
 			"-o", fmt.Sprintf("UserKnownHostsFile=%s", path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile)),
-			"-vv",
 			"-vvv",
-		}
-		assert.Equal(t, expected, result)
-
-	})
-
-	t.Run("allow updating the log verbosity", func(t *testing.T) {
-		cfg := ssh.DefaultConfig()
-		cfg.LogLevel = 0
-
-		sshClient := newTestClient(t, cfg, false)
-		result, err := sshClient.SSHFlagsFromConfig()
-
-		assert.Nil(t, err)
-		expected := []string{
-			"-i",
-			cfg.KeyFile,
-			"@localhost",
-			"-p",
-			"22",
-			"-R",
-			"0",
-			"-o", fmt.Sprintf("CertificateFile=%s", cfg.KeyFile+certSuffix),
-			"-o", "ConnectTimeout=1",
-			"-o", "ServerAliveInterval=15",
-			"-o", "TCPKeepAlive=no",
-			"-o", fmt.Sprintf("UserKnownHostsFile=%s", path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile)),
-		}
-		assert.Equal(t, expected, result)
-
-		cfg.LogLevel = 2
-
-		sshClient = newTestClient(t, cfg, false)
-		result, err = sshClient.SSHFlagsFromConfig()
-
-		assert.Nil(t, err)
-		expected = []string{
-			"-i",
-			cfg.KeyFile,
-			"@localhost",
-			"-p",
-			"22",
-			"-R",
-			"0",
-			"-o", fmt.Sprintf("CertificateFile=%s", cfg.KeyFile+certSuffix),
-			"-o", "ConnectTimeout=1",
-			"-o", "ServerAliveInterval=15",
-			"-o", "TCPKeepAlive=no",
-			"-o", fmt.Sprintf("UserKnownHostsFile=%s", path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile)),
-			"-vv",
 		}
 		assert.Equal(t, expected, result)
 

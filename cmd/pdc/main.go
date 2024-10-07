@@ -65,17 +65,6 @@ func (mf *mainFlags) RegisterFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&mf.DevMode, "dev-mode", false, "[DEVELOPMENT ONLY] run the agent in development mode")
 }
 
-func logLevelToSSHLogLevel(level string) (int, error) {
-	switch level {
-	case "error", "warn", "info":
-		return 0, nil
-	case "debug":
-		return 3, nil
-	default:
-		return -1, fmt.Errorf("invalid log level: %s", level)
-	}
-}
-
 // Tries to get the openssh version. Returns "UNKNOWN" on error.
 func tryGetOpenSSHVersion() string {
 	timeoutCtx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
@@ -107,13 +96,6 @@ func main() {
 	}
 
 	sshConfig.Args = os.Args[1:]
-	sshConfig.LogLevel, err = logLevelToSSHLogLevel(mf.LogLevel)
-	if err != nil {
-		usageFn()
-		fmt.Printf("setting log level: %s\n", err)
-		os.Exit(1)
-	}
-
 	logger := setupLogger(mf.LogLevel)
 
 	level.Info(logger).Log("msg", "PDC agent info",
@@ -150,6 +132,7 @@ func main() {
 	pdcClientCfg.URL = apiURL
 	sshConfig.PDC = *pdcClientCfg
 	sshConfig.URL = gatewayURL
+	sshConfig.LogLevel = mf.LogLevel
 
 	if mf.DevMode {
 		setDevelopmentConfig(mf.Domain, sshConfig, pdcClientCfg)
