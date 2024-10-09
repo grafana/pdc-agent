@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -62,7 +63,7 @@ func (mf *mainFlags) RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&mf.APIFQDN, "api-fqdn", "", "FQDN for the PDC API. If set, this will take precedence over the cluster and domain flags")
 	fs.StringVar(&mf.GatewayFQDN, "gateway-fqdn", "", "FQDN for the PDC Gateway. If set, this will take precedence over the cluster and domain flags")
 
-	fs.BoolVar(&mf.DevMode, "dev-mode", false, "[DEVELOPMENT ONLY] run the agent in development mode")
+	fs.BoolVar(&mf.DevMode, "dev-mode", false, "[DEVELOPMENT ONLY] run the agent in development mode.")
 }
 
 // Tries to get the openssh version. Returns "UNKNOWN" on error.
@@ -122,7 +123,7 @@ func main() {
 		return
 	}
 
-	apiURL, gatewayURL, err := createURLs(mf)
+	apiURL, gatewayURL, err := createURLs(mf, sshConfig.Port, pdcClientCfg.Port)
 	if err != nil {
 		level.Error(logger).Log("err", err)
 		os.Exit(1)
@@ -148,7 +149,7 @@ func main() {
 
 // Configures the agent for local development
 func setDevelopmentConfig(domain string, sshCfg *ssh.Config, pdcClientCfg *pdc.Config) {
-	pdcClientCfg.URL, _ = url.Parse("http://" + net.JoinHostPort(domain, pdcClientCfg.DevPort))
+	pdcClientCfg.URL, _ = url.Parse("http://" + net.JoinHostPort(domain, strconv.Itoa(pdcClientCfg.Port)))
 
 	pdcClientCfg.DevHeaders = map[string]string{
 		"X-Scope-OrgID":      pdcClientCfg.HostedGrafanaID,
@@ -156,8 +157,7 @@ func setDevelopmentConfig(domain string, sshCfg *ssh.Config, pdcClientCfg *pdc.C
 	}
 	pdcClientCfg.SignPublicKeyEndpoint = "/api/v1/sign-public-key"
 
-	sshCfg.Port = sshCfg.DevPort
-	sshCfg.URL, _ = url.Parse(domain)
+	sshCfg.URL, _ = url.Parse(domain) // port is added in the ssh
 	sshCfg.PDC = *pdcClientCfg
 }
 
@@ -203,9 +203,9 @@ func run(logger log.Logger, sshConfig *ssh.Config, pdcConfig *pdc.Config) error 
 	return nil
 }
 
-func createURLs(cfg *mainFlags) (api *url.URL, gateway *url.URL, err error) {
-	apiURL := fmt.Sprintf("https://private-datasource-connect-api-%s.%s", cfg.Cluster, cfg.Domain)
-	gatewayURL := fmt.Sprintf("private-datasource-connect-%s.%s", cfg.Cluster, cfg.Domain)
+func createURLs(cfg *mainFlags, sshPort int, apiPort int) (api *url.URL, gateway *url.URL, err error) {
+	apiURL := fmt.Sprintf("https://private-datasource-connect-api-%s.%s:%d", cfg.Cluster, cfg.Domain, apiPort)
+	gatewayURL := fmt.Sprintf("private-datasource-connect-%s.%s:%s", cfg.Cluster, cfg.Domain, sshPort)
 
 	if cfg.APIFQDN != "" {
 		apiURL = "https://" + cfg.APIFQDN

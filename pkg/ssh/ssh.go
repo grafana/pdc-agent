@@ -52,10 +52,6 @@ type Config struct {
 	URL                       *url.URL
 	// MetricsAddr is the port to expose metrics on
 	MetricsAddr string
-
-	// Used for local development.
-	// DevPort is the port number for the PDC gateway
-	DevPort int
 }
 
 // DefaultConfig returns a Config with some sensible defaults set
@@ -84,9 +80,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.CertExpiryWindow, "cert-expiry-window", 5*time.Minute, "The time before the certificate expires to renew it.")
 	f.DurationVar(&cfg.CertCheckCertExpiryPeriod, "cert-check-expiry-period", 1*time.Minute, "How often to check certificate validity. 0 means it is only checked at start")
 	f.StringVar(&cfg.MetricsAddr, "metrics-addr", ":8090", "HTTP server address to expose metrics on")
-
-	f.IntVar(&cfg.DevPort, "dev-ssh-port", 2244, "[DEVELOPMENT ONLY] The port to use for agent connections to the PDC SSH gateway")
-
+	f.IntVar(&cfg.Port, "ssh-port", 22, "Port to use for SSH connections to PDC. Useful for if the pdc agent connections are getting forwarded through some proxies in your network.")
 }
 
 func (cfg Config) KeyFileDir() string {
