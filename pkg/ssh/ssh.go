@@ -50,8 +50,10 @@ type Config struct {
 	// is valid and regenerate it if necessary.
 	CertCheckCertExpiryPeriod time.Duration
 	URL                       *url.URL
+
 	// MetricsAddr is the port to expose metrics on
-	MetricsAddr string
+	MetricsAddr  string
+	ParseMetrics bool
 
 	// Used for local development.
 	// DevPort is the port number for the PDC gateway
@@ -66,10 +68,11 @@ func DefaultConfig() *Config {
 		root = ""
 	}
 	return &Config{
-		Port:     22,
-		PDC:      pdc.Config{},
-		LogLevel: "info",
-		KeyFile:  path.Join(root, ".ssh/grafana_pdc"),
+		Port:         22,
+		PDC:          pdc.Config{},
+		LogLevel:     "info",
+		KeyFile:      path.Join(root, ".ssh/grafana_pdc"),
+		ParseMetrics: true,
 	}
 }
 
@@ -84,6 +87,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.CertExpiryWindow, "cert-expiry-window", 5*time.Minute, "The time before the certificate expires to renew it.")
 	f.DurationVar(&cfg.CertCheckCertExpiryPeriod, "cert-check-expiry-period", 1*time.Minute, "How often to check certificate validity. 0 means it is only checked at start")
 	f.StringVar(&cfg.MetricsAddr, "metrics-addr", ":8090", "HTTP server address to expose metrics on")
+	f.BoolVar(&cfg.ParseMetrics, "parse-metrics", true, "Enabled or disable parsing of metrics from the ssh logs")
 
 	f.IntVar(&cfg.DevPort, "dev-ssh-port", 2244, "[DEVELOPMENT ONLY] The port to use for agent connections to the PDC SSH gateway")
 
@@ -125,10 +129,14 @@ func NewClient(cfg *Config, logger log.Logger, km *KeyManager) *Client {
 
 func (s *Client) Collect(ch chan<- prometheus.Metric) {
 	s.metrics.sshRestartsCount.Collect(ch)
+	s.metrics.channelsCount.Collect(ch)
+	s.metrics.tcpConnectionsCount.Collect(ch)
 }
 
 func (s *Client) Describe(ch chan<- *prometheus.Desc) {
 	s.metrics.sshRestartsCount.Describe(ch)
+	s.metrics.channelsCount.Describe(ch)
+	s.metrics.tcpConnectionsCount.Describe(ch)
 }
 
 func (s *Client) starting(ctx context.Context) error {
@@ -162,9 +170,15 @@ func (s *Client) starting(ctx context.Context) error {
 	retryOpts := retry.Opts{MaxBackoff: 16 * time.Second, InitialBackoff: 1 * time.Second}
 	go retry.Forever(retryOpts, func() error {
 		cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
-		loggerWriter := newLoggerWriterAdapter(s.logger, s.cfg.LogLevel)
+
+		var mParser *logMetricsParser
+		if s.cfg.ParseMetrics {
+			mParser = &logMetricsParser{m: s.metrics}
+		}
+		loggerWriter := newLoggerWriterAdapter(s.logger, s.cfg.LogLevel, mParser)
 		cmd.Stdout = loggerWriter
 		cmd.Stderr = loggerWriter
+
 		_ = cmd.Run()
 		if ctx.Err() != nil {
 			return nil // context was canceled
@@ -290,12 +304,14 @@ func extractOptionFromFlag(flag string) (string, string, error) {
 type loggerWriterAdapter struct {
 	logger log.Logger
 	level  string
+	parser *logMetricsParser
 }
 
-func newLoggerWriterAdapter(logger log.Logger, level string) loggerWriterAdapter {
+func newLoggerWriterAdapter(logger log.Logger, level string, parser *logMetricsParser) loggerWriterAdapter {
 	return loggerWriterAdapter{
 		logger: logger,
 		level:  level,
+		parser: parser,
 	}
 }
 
@@ -309,6 +325,11 @@ func (adapter loggerWriterAdapter) Write(p []byte) (n int, err error) {
 	for _, msg := range bytes.Split(p, []byte{'\r', '\n'}) {
 		if len(msg) == 0 {
 			continue
+		}
+
+		// if parsing is enabled, create metrics by parsing the log messages
+		if adapter.parser != nil {
+			adapter.parser.parseLogMetrics(msg)
 		}
 
 		// Do not log debug messages if the log level is not debug.
