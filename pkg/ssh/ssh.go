@@ -172,6 +172,7 @@ func (s *Client) starting(ctx context.Context) error {
 		cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
 
 		var mParser *logMetricsParser
+		level.Debug(s.logger).Log("msg", "parsing metrics from logs", "enabled", s.cfg.ParseMetrics)
 		if s.cfg.ParseMetrics {
 			mParser = &logMetricsParser{m: s.metrics}
 		}
