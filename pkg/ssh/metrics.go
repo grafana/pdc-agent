@@ -49,16 +49,19 @@ type logMetricsParser struct {
 func (p logMetricsParser) parseLogMetrics(msg []byte) {
 	if bytes.Contains(msg, []byte("nchannels")) {
 		p.channelsCount(msg)
+		return
 	}
 
 	if bytes.Contains(msg, []byte("connected to")) {
 		pattern := `connected to (.+?) port (\d+)`
 		p.tcpConnCount(msg, pattern, "success")
+		return
 	}
 
 	if bytes.Contains(msg, []byte("connect_to")) {
 		pattern := `connect_to (.+?) port (\d+): failed.`
 		p.tcpConnCount(msg, pattern, "failure")
+		return
 	}
 }
 
