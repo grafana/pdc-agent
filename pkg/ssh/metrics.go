@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"regexp"
 	"strconv"
+	"time"
+
+	"github.com/grafana/pdc-agent/pkg/metrics"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -11,6 +14,7 @@ import (
 type promMetrics struct {
 	sshRestartsCount    *prometheus.CounterVec
 	tcpConnectionsCount *prometheus.GaugeVec
+	timeToConnect       *prometheus.HistogramVec
 	channelsCount       prometheus.Gauge
 }
 
@@ -39,29 +43,44 @@ func newPromMetrics() *promMetrics {
 			},
 			[]string{"target", "status"},
 		),
+		timeToConnect: metrics.NewNativeHistogramVec(
+			prometheus.HistogramOpts{
+				Name:      "ssh_time_to_connect_seconds",
+				Help:      "Time spent to establish SSH connection",
+				Namespace: "pdc_agent",
+			},
+			[]string{"event"},
+		),
 	}
 }
 
 type logMetricsParser struct {
-	m *promMetrics
+	m           *promMetrics
+	connStart   time.Time
+	connRestart time.Time
+	isStart     bool // to differentiate between "start" and "restart" connection
 }
 
 func (p logMetricsParser) parseLogMetrics(msg []byte) {
-	if bytes.Contains(msg, []byte("nchannels")) {
+	switch {
+	case bytes.Contains(msg, []byte("nchannels")):
 		p.channelsCount(msg)
-		return
-	}
-
-	if bytes.Contains(msg, []byte("connected to")) {
+	case bytes.Contains(msg, []byte("connected to")):
 		pattern := `connected to (.+?) port (\d+)`
 		p.tcpConnCount(msg, pattern, "success")
-		return
-	}
-
-	if bytes.Contains(msg, []byte("connect_to")) {
+	case bytes.Contains(msg, []byte("connect_to")):
 		pattern := `connect_to (.+?) port (\d+): failed.`
 		p.tcpConnCount(msg, pattern, "failure")
-		return
+	case bytes.Contains(msg, []byte("This is Grafana Private Datasource Connect!")):
+		if p.isStart {
+			p.m.timeToConnect.
+				WithLabelValues("start").
+				Observe(time.Since(p.connStart).Seconds())
+		} else {
+			p.m.timeToConnect.
+				WithLabelValues("restart").
+				Observe(time.Since(p.connRestart).Seconds())
+		}
 	}
 }
 
