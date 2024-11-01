@@ -11,10 +11,16 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+var (
+	reConnSuccess   = regexp.MustCompile(`connected to (.+?) port (\d+)`)
+	reConnFailure   = regexp.MustCompile(`connect_to (.+?) port (\d+): failed.`)
+	reChannelsCount = regexp.MustCompile(`nchannels (\d+)`)
+)
+
 type promMetrics struct {
 	sshRestartsCount    *prometheus.CounterVec
-	tcpConnectionsCount *prometheus.GaugeVec
-	timeToConnect       *prometheus.HistogramVec
+	tcpConnectionsCount *prometheus.CounterVec
+	timeToConnect       prometheus.Histogram
 	channelsCount       prometheus.Gauge
 }
 
@@ -35,30 +41,27 @@ func newPromMetrics() *promMetrics {
 				Namespace: "pdc_agent",
 			},
 		),
-		tcpConnectionsCount: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name:      "tcp_connections",
+		tcpConnectionsCount: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name:      "tcp_connections_total",
 				Help:      "Number of open TCP connections",
 				Namespace: "pdc_agent",
 			},
 			[]string{"target", "status"},
 		),
-		timeToConnect: metrics.NewNativeHistogramVec(
-			prometheus.HistogramOpts{
-				Name:      "ssh_time_to_connect_seconds",
-				Help:      "Time spent to establish SSH connection",
-				Namespace: "pdc_agent",
-			},
-			[]string{"event"},
-		),
+		timeToConnect: prometheus.NewHistogram(
+			metrics.NativeHistogramOpts(
+				prometheus.HistogramOpts{
+					Name:      "ssh_time_to_connect_seconds",
+					Help:      "Time spent to establish SSH connection",
+					Namespace: "pdc_agent",
+				})),
 	}
 }
 
 type logMetricsParser struct {
-	m           *promMetrics
-	connStart   time.Time
-	connRestart time.Time
-	isStart     bool // to differentiate between "start" and "restart" connection
+	m         *promMetrics
+	connStart time.Time
 }
 
 func (p logMetricsParser) parseLogMetrics(msg []byte) {
@@ -66,27 +69,16 @@ func (p logMetricsParser) parseLogMetrics(msg []byte) {
 	case bytes.Contains(msg, []byte("nchannels")):
 		p.channelsCount(msg)
 	case bytes.Contains(msg, []byte("connected to")):
-		pattern := `connected to (.+?) port (\d+)`
-		p.tcpConnCount(msg, pattern, "success")
+		p.tcpConnCount(msg, reConnSuccess, "success")
 	case bytes.Contains(msg, []byte("connect_to")):
-		pattern := `connect_to (.+?) port (\d+): failed.`
-		p.tcpConnCount(msg, pattern, "failure")
+		p.tcpConnCount(msg, reConnFailure, "failure")
 	case bytes.Contains(msg, []byte("This is Grafana Private Datasource Connect!")):
-		if p.isStart {
-			p.m.timeToConnect.
-				WithLabelValues("start").
-				Observe(time.Since(p.connStart).Seconds())
-		} else {
-			p.m.timeToConnect.
-				WithLabelValues("restart").
-				Observe(time.Since(p.connRestart).Seconds())
-		}
+		p.m.timeToConnect.Observe(time.Since(p.connStart).Seconds())
 	}
 }
 
 func (p logMetricsParser) channelsCount(msg []byte) {
-	re := regexp.MustCompile(`nchannels (\d+)`)
-	matches := re.FindSubmatch(msg)
+	matches := reChannelsCount.FindSubmatch(msg)
 	if len(matches) > 1 {
 		if value, err := strconv.Atoi(string(matches[1])); err == nil {
 			p.m.channelsCount.Set(float64(value))
@@ -94,8 +86,7 @@ func (p logMetricsParser) channelsCount(msg []byte) {
 	}
 }
 
-func (p logMetricsParser) tcpConnCount(msg []byte, pattern string, status string) {
-	re := regexp.MustCompile(pattern)
+func (p logMetricsParser) tcpConnCount(msg []byte, re *regexp.Regexp, status string) {
 	matches := re.FindSubmatch(msg)
 	if len(matches) > 1 {
 		// target host name, and port if specified

@@ -11,12 +11,13 @@ type promMetrics struct {
 
 func newPromMetrics() *promMetrics {
 	return &promMetrics{
-		signingRequests: metrics.NewNativeHistogramVec(
-			prometheus.HistogramOpts{
-				Name:      "signing_requests_duration_seconds",
-				Help:      "Duration of signing requests in seconds",
-				Namespace: "pdc_agent",
-			},
+		signingRequests: prometheus.NewHistogramVec(
+			metrics.NativeHistogramOpts(
+				prometheus.HistogramOpts{
+					Name:      "signing_requests_duration_seconds",
+					Help:      "Duration of signing requests in seconds",
+					Namespace: "pdc_agent",
+				}),
 			[]string{"status"},
 		),
 	}

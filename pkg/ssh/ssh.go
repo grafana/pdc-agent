@@ -144,8 +144,6 @@ func (s *Client) Describe(ch chan<- *prometheus.Desc) {
 
 func (s *Client) starting(ctx context.Context) error {
 	level.Info(s.logger).Log("msg", "starting ssh client")
-	startTime := time.Now()
-	attempt := 1
 
 	if !s.cfg.SkipSSHValidation {
 		if err := validateSSHVersion(ctx, s.logger, s.SSHCmd); err != nil {
@@ -174,17 +172,16 @@ func (s *Client) starting(ctx context.Context) error {
 
 	retryOpts := retry.Opts{MaxBackoff: 16 * time.Second, InitialBackoff: 1 * time.Second}
 	go retry.Forever(retryOpts, func() error {
-		restartTime := time.Now()
+		startTime := time.Now()
+
 		cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
 
 		var mParser *logMetricsParser
 		level.Debug(s.logger).Log("msg", "parsing metrics from logs", "enabled", s.cfg.ParseMetrics)
 		if s.cfg.ParseMetrics {
 			mParser = &logMetricsParser{
-				m:           s.metrics,
-				connStart:   startTime,
-				connRestart: restartTime,
-				isStart:     attempt == 1,
+				m:         s.metrics,
+				connStart: startTime,
 			}
 		}
 		loggerWriter := newLoggerWriterAdapter(s.logger, s.cfg.LogLevel, mParser)
@@ -195,8 +192,6 @@ func (s *Client) starting(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return nil // context was canceled
 		}
-
-		attempt++
 
 		if cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == ConnectionAlreadyExistsCode {
 			level.Debug(s.logger).Log("msg", "server already had a connection for this tunnelID. trying a different server")
