@@ -49,13 +49,12 @@ func newPromMetrics() *promMetrics {
 			},
 			[]string{"target", "status"},
 		),
-		timeToConnect: prometheus.NewHistogram(
-			metrics.NativeHistogramOpts(
-				prometheus.HistogramOpts{
-					Name:      "ssh_time_to_connect_seconds",
-					Help:      "Time spent to establish SSH connection",
-					Namespace: "pdc_agent",
-				})),
+		timeToConnect: metrics.NewNativeHistogram(
+			prometheus.HistogramOpts{
+				Name:      "ssh_time_to_connect_seconds",
+				Help:      "Time spent to establish SSH connection",
+				Namespace: "pdc_agent",
+			}),
 	}
 }
 
