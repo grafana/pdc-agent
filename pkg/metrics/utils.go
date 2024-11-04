@@ -6,7 +6,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-func NewNativeHistogramVec(opts prometheus.HistogramOpts, labelNames []string) *prometheus.HistogramVec {
+func nativeHistogramOpts(opts prometheus.HistogramOpts) prometheus.HistogramOpts {
 	if opts.NativeHistogramBucketFactor == 0 {
 		// Enable native histograms, with the factor suggested in the docs
 		opts.NativeHistogramBucketFactor = 1.1
@@ -21,5 +21,13 @@ func NewNativeHistogramVec(opts prometheus.HistogramOpts, labelNames []string) *
 		opts.NativeHistogramMinResetDuration = 1 * time.Hour
 	}
 
-	return prometheus.NewHistogramVec(opts, labelNames)
+	return opts
+}
+
+func NewNativeHistogramVec(opts prometheus.HistogramOpts, labelNames []string) *prometheus.HistogramVec {
+	return prometheus.NewHistogramVec(nativeHistogramOpts(opts), labelNames)
+}
+
+func NewNativeHistogram(opts prometheus.HistogramOpts) prometheus.Histogram {
+	return prometheus.NewHistogram(nativeHistogramOpts(opts))
 }
