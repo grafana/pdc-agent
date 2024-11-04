@@ -13,7 +13,7 @@ import (
 
 var (
 	reConnSuccess   = regexp.MustCompile(`connected to (.+?) port (\d+)`)
-	reConnFailure   = regexp.MustCompile(`connect_to (.+?) port (\d+): failed.`)
+	reConnFailure   = regexp.MustCompile(`connect_to (.+?)(?: port (\d+))?:`)
 	reChannelsCount = regexp.MustCompile(`nchannels (\d+)`)
 )
 
