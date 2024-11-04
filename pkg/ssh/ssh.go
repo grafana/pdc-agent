@@ -129,7 +129,7 @@ func NewClient(cfg *Config, logger log.Logger, km *KeyManager) *Client {
 
 func (s *Client) Collect(ch chan<- prometheus.Metric) {
 	s.metrics.sshRestartsCount.Collect(ch)
-	s.metrics.channelsCount.Collect(ch)
+	s.metrics.openChannelsCount.Collect(ch)
 	s.metrics.tcpConnectionsCount.Collect(ch)
 	s.metrics.timeToConnect.Collect(ch)
 
@@ -137,7 +137,7 @@ func (s *Client) Collect(ch chan<- prometheus.Metric) {
 
 func (s *Client) Describe(ch chan<- *prometheus.Desc) {
 	s.metrics.sshRestartsCount.Describe(ch)
-	s.metrics.channelsCount.Describe(ch)
+	s.metrics.openChannelsCount.Describe(ch)
 	s.metrics.tcpConnectionsCount.Describe(ch)
 	s.metrics.timeToConnect.Describe(ch)
 }

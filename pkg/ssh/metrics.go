@@ -21,7 +21,7 @@ type promMetrics struct {
 	sshRestartsCount    *prometheus.CounterVec
 	tcpConnectionsCount *prometheus.CounterVec
 	timeToConnect       prometheus.Histogram
-	channelsCount       prometheus.Gauge
+	openChannelsCount   prometheus.Gauge
 }
 
 func newPromMetrics() *promMetrics {
@@ -34,10 +34,10 @@ func newPromMetrics() *promMetrics {
 			},
 			[]string{"exit_code"},
 		),
-		channelsCount: prometheus.NewGauge(
+		openChannelsCount: prometheus.NewGauge(
 			prometheus.GaugeOpts{
-				Name:      "ssh_channels",
-				Help:      "Number of active SSH channels",
+				Name:      "ssh_open_channels",
+				Help:      "Number of open SSH channels",
 				Namespace: "pdc_agent",
 			},
 		),
@@ -80,7 +80,7 @@ func (p logMetricsParser) channelsCount(msg []byte) {
 	matches := reChannelsCount.FindSubmatch(msg)
 	if len(matches) > 1 {
 		if value, err := strconv.Atoi(string(matches[1])); err == nil {
-			p.m.channelsCount.Set(float64(value))
+			p.m.openChannelsCount.Set(float64(value))
 		}
 	}
 }
