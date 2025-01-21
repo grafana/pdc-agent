@@ -1,4 +1,4 @@
-BINARY_NAME=pdc-agent
+BINARY_NAME=pdc
 
 all: lint build test
 
