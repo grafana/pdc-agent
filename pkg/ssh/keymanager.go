@@ -208,7 +208,7 @@ func (km KeyManager) newCertRequired() bool {
 	}
 
 	if now > (cert.ValidBefore - uint64(km.cfg.CertExpiryWindow.Seconds())) {
-		level.Info(km.logger).Log("msg", "new certificate required: certificate is about to expire")
+		level.Debug(km.logger).Log("msg", "new certificate required: certificate is about to expire")
 		return true
 	}
 
@@ -281,7 +281,6 @@ func (km KeyManager) generateKeyPair() error {
 }
 
 func (km KeyManager) generateCert(ctx context.Context) error {
-	level.Info(km.logger).Log("msg", "generating new certificate")
 
 	pbk, err := km.readPubKeyFile()
 	if err != nil {
@@ -306,6 +305,9 @@ func (km KeyManager) generateCert(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	v := time.Unix(int64(resp.Certificate.ValidBefore), 0)
+	level.Info(km.logger).Log("msg", "new client SSH certificate generated", "validfor", time.Until(v))
 
 	return nil
 }
