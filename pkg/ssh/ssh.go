@@ -246,7 +246,7 @@ func (s *Client) SSHFlagsFromConfig() ([]string, error) {
 	gwURL := s.cfg.URL
 	user := fmt.Sprintf("%s@%s", s.cfg.PDC.HostedGrafanaID, gwURL.String())
 
-	// keep ssh_config parameters in a map so they can be overidden by the user
+	// keep ssh_config parameters in a map so they can be overridden by the user
 	sshOptions := map[string]string{
 		"UserKnownHostsFile":  fmt.Sprintf("%s/%s", keyFileDir, KnownHostsFile),
 		"CertificateFile":     fmt.Sprintf("%s-cert.pub", s.cfg.KeyFile),
