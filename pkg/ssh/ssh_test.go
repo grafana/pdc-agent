@@ -277,6 +277,93 @@ func TestSSHVersionValidation(t *testing.T) {
 
 }
 
+type assertFn func(t *testing.T, s string)
+
+func TestLoggerWriterAdapter(t *testing.T) {
+
+	testcases := []struct {
+		name      string
+		input     []byte
+		callback  func(t *testing.T)
+		assertFns []assertFn
+	}{
+		{
+			name:  "pass through",
+			input: []byte("passthrough"),
+			assertFns: []assertFn{
+				func(t *testing.T, s string) {
+					assert.Equal(t, "passthrough", s)
+				},
+			},
+		},
+		{
+			name:  "split on \r\n",
+			input: []byte("hello\r\nworld"),
+			assertFns: []assertFn{
+				func(t *testing.T, s string) {
+					assert.Equal(t, "hello", s)
+				},
+				func(t *testing.T, s string) {
+					assert.Equal(t, "world", s)
+				},
+			},
+		},
+		{
+			name:      "call callback on successful connection",
+			input:     []byte(ssh.SuccessfulConnectionResponse),
+			assertFns: nil,
+			callback: func(t *testing.T) {
+				assert.True(t, true, true)
+			},
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+
+			if tc.callback == nil {
+				tc.callback = func(t *testing.T) {
+					assert.FailNow(t, "should not be called")
+				}
+			}
+
+			cb := func() {
+				tc.callback(t)
+			}
+
+			logger := newLoggerWithAssertFn(t, tc.assertFns)
+			l := ssh.NewLoggerWriterAdapter(logger, "debug", nil, cb)
+			_, _ = l.Write(tc.input)
+
+		})
+	}
+}
+
+type assertLogger struct {
+	// iterate through assertFns, call one each time Write is called
+	assertFns []assertFn
+	t         *testing.T
+	i         int
+}
+
+func (a *assertLogger) Log(keyvals ...interface{}) error {
+	// items are "level" <level> "msg" <message>. We want <message>.
+	kv := keyvals[3]
+	s := kv.(string)
+	if len(a.assertFns)-1 >= a.i {
+		a.assertFns[a.i](a.t, s)
+		a.i++
+	}
+	return nil
+}
+
+func newLoggerWithAssertFn(t *testing.T, fs []assertFn) log.Logger {
+	return &assertLogger{
+		assertFns: fs,
+		t:         t,
+	}
+}
+
 type mockPDCClient struct {
 }
 

@@ -29,6 +29,9 @@ const (
 	// The exit code sent by the pdc server when the connection limit is reached.
 	ConnectionLimitReachedCode  = 254
 	ConnectionAlreadyExistsCode = 253
+
+	// String returned from PDC when the PDC agent successfully connects
+	SuccessfulConnectionResponse = "This is Grafana Private Datasource Connect!"
 )
 
 // Config represents all configurable properties of the ssh package.
@@ -184,7 +187,17 @@ func (s *Client) starting(ctx context.Context) error {
 				connStart: startTime,
 			}
 		}
-		loggerWriter := newLoggerWriterAdapter(s.logger, s.cfg.LogLevel, mParser)
+
+		// define a default error to return if the command fails. We may replace it
+		// with a resetBackoffError if we do not want the retry mechanism to pause
+		// before retrying.
+		err := errors.New("")
+
+		cb := func() {
+			err = retry.ResetBackoffError{}
+		}
+
+		loggerWriter := NewLoggerWriterAdapter(s.logger, s.cfg.LogLevel, mParser, cb)
 		cmd.Stdout = loggerWriter
 		cmd.Stderr = loggerWriter
 
@@ -204,7 +217,7 @@ func (s *Client) starting(ctx context.Context) error {
 		}
 
 		exitCode := cmd.ProcessState.ExitCode()
-		level.Info(s.logger).Log("msg", "ssh client exited. restarting", "exitCode", exitCode)
+		level.Info(s.logger).Log("msg", "ssh client exited. restarting", "exitCode", exitCode, "resetBackoff", errors.Is(err, retry.ResetBackoffError{}))
 		s.metrics.sshRestartsCount.WithLabelValues(fmt.Sprintf("%d", exitCode)).Inc()
 
 		// Check keys and cert validity before restart, create new cert if required.
@@ -215,12 +228,13 @@ func (s *Client) starting(ctx context.Context) error {
 		// They keymanager has logic to perform a background key refresh, but this
 		// logic should stay in place in case that is disabled.
 		if s.km != nil {
-			err := s.km.CreateKeys(ctx, false)
-			if err != nil {
-				level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", err)
+			kerr := s.km.CreateKeys(ctx, false)
+			if kerr != nil {
+				level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", kerr)
 			}
 		}
-		return fmt.Errorf("ssh client exited")
+
+		return err
 	})
 
 	return nil
@@ -310,22 +324,28 @@ func extractOptionFromFlag(flag string) (string, string, error) {
 }
 
 // Wraps a logger, implements io.Writer and writes to the logger.
-type loggerWriterAdapter struct {
-	logger log.Logger
-	level  string
-	parser *logMetricsParser
+// If successfulConnectionCallback is not nil, it will be called when the adapter
+// sees the SuccessfulConnectionResponse from the server.
+type LoggerWriterAdapter struct {
+	logger                       log.Logger
+	level                        string
+	parser                       *logMetricsParser
+	successfulConnectionCallback func()
+	connected                    bool
 }
 
-func newLoggerWriterAdapter(logger log.Logger, level string, parser *logMetricsParser) loggerWriterAdapter {
-	return loggerWriterAdapter{
-		logger: logger,
-		level:  level,
-		parser: parser,
+func NewLoggerWriterAdapter(logger log.Logger, level string, parser *logMetricsParser, connCB func()) LoggerWriterAdapter {
+
+	return LoggerWriterAdapter{
+		logger:                       logger,
+		level:                        level,
+		parser:                       parser,
+		successfulConnectionCallback: connCB,
 	}
 }
 
 // Implements io.Writer.
-func (adapter loggerWriterAdapter) Write(p []byte) (n int, err error) {
+func (adapter LoggerWriterAdapter) Write(p []byte) (n int, err error) {
 	// The ssh command output is separated by \r\n and the logger escapes strings.
 	// By default, the logger output would look like this: msg="debug: some message\r\ndebug2: some message\r\n".
 	// We split the messages on \r\n and log each of them at a time to make the output look like this:
@@ -341,12 +361,21 @@ func (adapter loggerWriterAdapter) Write(p []byte) (n int, err error) {
 			adapter.parser.parseLogMetrics(msg)
 		}
 
+		msgStr := string(msg)
+
+		// If configured with a callback, call it at most once upon a successful connection.
+		// The bool check is first because it is the cheapest
+		if !adapter.connected && adapter.successfulConnectionCallback != nil && strings.Contains(msgStr, SuccessfulConnectionResponse) {
+			adapter.connected = true
+			adapter.successfulConnectionCallback()
+		}
+
 		// Do not log debug messages if the log level is not debug.
-		if adapter.level != "debug" && strings.HasPrefix(string(msg), "debug") {
+		if adapter.level != "debug" && strings.HasPrefix(msgStr, "debug") {
 			continue
 		}
 
-		if err := level.Info(adapter.logger).Log("msg", msg); err != nil {
+		if err := level.Info(adapter.logger).Log("msg", msgStr); err != nil {
 			return 0, fmt.Errorf("writing log statement")
 		}
 	}
