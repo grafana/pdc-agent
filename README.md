@@ -17,6 +17,66 @@ Use the `-log.level` flag. Run the agent with the `-help` flag to see the possib
 | `info`       | 0 (`-v` not set) |
 | `debug`      | 3 (`-vvv`)       |
 
+
+## Available flags
+
+You can print the flags for the PDC agent with `-h`:
+
+```
+./pdc -h         
+
+Usage of ./pdc:
+  -api-fqdn string
+    	FQDN for the PDC API. If set, this will take precedence over the cluster and domain flags
+  -cert-check-expiry-period duration
+    	How often to check certificate validity. 0 means it is only checked at start (default 1m0s)
+  -cert-expiry-window duration
+    	The time before the certificate expires to renew it. (default 5m0s)
+  -cluster string
+    	the PDC cluster to connect to use
+  -dev-api-port string
+    	[DEVELOPMENT ONLY] The port to use for agent connections to the PDC API (default "9181")
+  -dev-mode
+    	[DEVELOPMENT ONLY] run the agent in development mode
+  -dev-network string
+    	[DEVELOPMENT ONLY] the network the agent will connect to
+  -dev-ssh-port int
+    	[DEVELOPMENT ONLY] The port to use for agent connections to the PDC SSH gateway (default 2244)
+  -domain string
+    	the domain of the PDC cluster (default "grafana.net")
+  -force-key-file-overwrite
+    	Force a new ssh key pair to be generated
+  -gateway-fqdn string
+    	FQDN for the PDC Gateway. If set, this will take precedence over the cluster and domain flags
+  -gcloud-hosted-grafana-id string
+    	The ID of the Hosted Grafana instance to connect to
+  -h	Print help
+  -log.level string
+    	"debug", "info", "warn" or "error" (default "info")
+  -metrics-addr string
+    	HTTP server address to expose metrics on (default ":8090")
+  -network string
+    	DEPRECATED: The name of the PDC network to connect to
+  -parse-metrics
+    	Enabled or disable parsing of metrics from the ssh logs (default true)
+  -retrymax int
+    	The max num of retries for http requests (default 4)
+  -skip-ssh-validation
+    	Ignore openssh minimum version constraints.
+  -ssh-flag value
+    	Additional flags to be passed to ssh. Can be set more than once.
+  -ssh-key-file string
+    	The path to the SSH key file. (default "/Users/daf/.ssh/grafana_pdc")
+  -token string
+    	The token to use to authenticate with Grafana Cloud. It must have the pdc-signing:write scope
+
+
+If pdc is run with SSH flags, it will pass all arguments directly through to the "ssh" binary. This is deprecated behaviour.
+
+Run ./pdc <command> -h for more information
+
+```
+
 ## DEV flags
 
 Flags prefixed with `-dev` are used for local development and can be removed at any time.
