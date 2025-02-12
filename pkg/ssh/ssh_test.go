@@ -130,7 +130,7 @@ func TestFakeSSHCmd(t *testing.T) {
 }
 
 // Building this out to verify behaviour, not exactly sure that the function is
-// hanging off the right struct or organised appropriately.
+// hanging off the right struct or organized appropriately.
 func TestClient_SSHArgs(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
 		cfg := ssh.DefaultConfig()
