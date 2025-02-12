@@ -1,6 +1,7 @@
 linters-settings:
   govet:
-    check-shadowing: true
+    enable:
+      - shadow
   gocyclo:
     min-complexity: 10
   gocritic:
@@ -14,12 +15,16 @@ linters-settings:
   lll:
     line-length: 140
   nolintlint:
-    allow-leading-space: true # don't require machine-readable nolint directives (i.e. with no leading space)
     allow-unused: false # report any unused nolint directives
     require-explanation: false # don't require an explanation for nolint directives
     require-specific: false # don't require nolint directives to be specific about which linter is being skipped
   errcheck:
-    exclude: ./.errcheck-exclude
+    exclude-functions: 
+      - io/ioutil.WriteFile
+      - io/ioutil.ReadFile
+      - (github.com/go-kit/log.Logger).Log
+      - io.Copy
+      - (github.com/opentracing/opentracing-go.Tracer).Inject
   gocognit:
     min-complexity: 31
   gomoddirectives:
@@ -50,7 +55,6 @@ linters:
     ## - execinquery
     # - exhaustive
     ## - exhaustruct
-    - exportloopref
     ## - forbidigo
     ## - forcetypeassert
     # - funlen
@@ -130,6 +134,8 @@ issues:
         - govet
         - dupl
         # - goerr113
+  exclude-dirs:
+    - internal/proxyproto
 
 run:
   concurrency: 4
@@ -137,8 +143,6 @@ run:
   build-tags:
     - ""
     - integration
-  skip-dirs:
-    - internal/proxyproto
   # use Go 1.17 linter behaviour because we don't use generics - see
   # https://github.com/golangci/golangci-lint/issues/2649 for details - this can
   # be removed once that issue is resolved, or if we decide to use generics -
