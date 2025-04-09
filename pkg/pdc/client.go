@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"time"
 
@@ -66,6 +67,14 @@ func (cfg *Config) RegisterFlags(fs *flag.FlagSet) {
 
 	fs.StringVar(&cfg.DevNetwork, "dev-network", "", "[DEVELOPMENT ONLY] the network the agent will connect to")
 	fs.StringVar(&cfg.DevPort, "dev-api-port", "9181", "[DEVELOPMENT ONLY] The port to use for agent connections to the PDC API")
+
+	// flags should always take precedence over env vars
+	if cfg.Token == "" {
+		cfg.Token = os.Getenv("GCLOUD_PDC_SIGNING_TOKEN")
+	}
+	if cfg.HostedGrafanaID == "" {
+		cfg.HostedGrafanaID = os.Getenv("GCLOUD_HOSTED_GRAFANA_ID")
+	}
 }
 
 // Client is a PDC API client
