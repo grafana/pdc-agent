@@ -63,6 +63,11 @@ func (mf *mainFlags) RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&mf.GatewayFQDN, "gateway-fqdn", "", "FQDN for the PDC Gateway. If set, this will take precedence over the cluster and domain flags")
 
 	fs.BoolVar(&mf.DevMode, "dev-mode", false, "[DEVELOPMENT ONLY] run the agent in development mode")
+
+	// flags should always take precedence over env vars
+	if mf.Cluster == "" {
+		mf.Cluster = os.Getenv("GCLOUD_PDC_CLUSTER")
+	}
 }
 
 // Tries to get the openssh version. Returns "UNKNOWN" on error.
