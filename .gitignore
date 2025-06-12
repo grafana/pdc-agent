@@ -26,3 +26,6 @@ main
 # ignore build artifacts
 /pdc-agent
 /pdc
+
+# ignore files added by shared workflows
+_shared-workflows-dockerhub-login/
