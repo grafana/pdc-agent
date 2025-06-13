@@ -10,7 +10,7 @@ require (
 	github.com/prometheus/client_golang v1.21.1
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/crypto v0.36.0
-	pgregory.net/rapid v1.1.0
+	pgregory.net/rapid v1.2.0
 )
 
 require (
