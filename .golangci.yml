@@ -1,11 +1,6 @@
 version: "2"
 run:
   concurrency: 4
-  # use Go 1.17 linter behaviour because we don't use generics - see
-  # https://github.com/golangci/golangci-lint/issues/2649 for details - this can
-  # be removed once that issue is resolved, or if we decide to use generics -
-  # the downside is some linters are disabled for 1.18
-  go: "1.17"
   build-tags:
     - ""
     - integration
