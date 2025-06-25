@@ -1,105 +1,41 @@
-linters-settings:
-  govet:
-    enable:
-      - shadow
-  gocyclo:
-    min-complexity: 10
-  gocritic:
-    disabled-checks:
-      - commentFormatting
-  dupl:
-    threshold: 100
-  goconst:
-    min-len: 2
-    min-occurrences: 4
-  lll:
-    line-length: 140
-  nolintlint:
-    allow-unused: false # report any unused nolint directives
-    require-explanation: false # don't require an explanation for nolint directives
-    require-specific: false # don't require nolint directives to be specific about which linter is being skipped
-  errcheck:
-    exclude-functions: 
-      - io/ioutil.WriteFile
-      - io/ioutil.ReadFile
-      - (github.com/go-kit/log.Logger).Log
-      - io.Copy
-      - (github.com/opentracing/opentracing-go.Tracer).Inject
-  gocognit:
-    min-complexity: 31
-  gomoddirectives:
-    replace-allow-list:
-      # see https://github.com/dolthub/go-mysql-server/issues/1591
-      - github.com/dolthub/go-mysql-server
-
+version: "2"
+run:
+  concurrency: 4
+  build-tags:
+    - ""
+    - integration
 linters:
-  disable-all: true
+  default: none
   enable:
     - asasalint
     - asciicheck
     - bidichk
     - bodyclose
     - containedctx
-    ## - contextcheck
-    ## - cyclop
-    ## - decorder
-    # - depguard
-    # - dogsled
     - dupl
     - dupword
     - durationcheck
     - errcheck
-    # - errchkjson
     - errname
     - errorlint
-    ## - execinquery
-    # - exhaustive
-    ## - exhaustruct
-    ## - forbidigo
-    ## - forcetypeassert
-    # - funlen
-    # - gci
-    # - gochecknoglobals
-    # - gochecknoinits
     - gocognit
     - goconst
     - gocritic
-    # - gocyclo
-    ## - godot
-    # - godox
-    ## - goerr113
-    - gofmt
-    # - gofumpt
     - goheader
-    - goimports
-    # - gomnd
     - gomoddirectives
     - gomodguard
     - goprintffuncname
-    # - gosec
-    - gosimple
     - govet
-    ## - grouper
     - importas
     - ineffassign
-    ## - interfacebloat
-    # - interfacer
-    # - ireturn
-    # - lll
     - loggercheck
-    ## - maintidx
     - makezero
     - misspell
     - nakedret
     - nestif
-    # - nilerr
-    ## - nilnil
-    # - nlreturn
     - noctx
     - nolintlint
-    ## - nonamedreturns
     - nosprintfhostport
-    ## - paralleltest
     - prealloc
     - predeclared
     - promlinter
@@ -108,43 +44,69 @@ linters:
     - rowserrcheck
     - sqlclosecheck
     - staticcheck
-    - stylecheck
-    # - tagliatelle
-    - tenv
     - testableexamples
-    # - testpackage
-    ## - thelper
     - tparallel
-    - typecheck
     - unconvert
     - unparam
     - unused
     - usestdlibvars
-    # - varnamelen
-    ## - wastedassign
-    # - whitespace
-    # - wrapcheck
-    # - wsl
-
-issues:
-  # Excluding configuration per-path, per-linter, per-text and per-source
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - govet
-        - dupl
-        # - goerr113
-  exclude-dirs:
-    - internal/proxyproto
-
-run:
-  concurrency: 4
-  timeout: 5m
-  build-tags:
-    - ""
-    - integration
-  # use Go 1.17 linter behaviour because we don't use generics - see
-  # https://github.com/golangci/golangci-lint/issues/2649 for details - this can
-  # be removed once that issue is resolved, or if we decide to use generics -
-  # the downside is some linters are disabled for 1.18
-  go: '1.17'
+  settings:
+    dupl:
+      threshold: 100
+    errcheck:
+      exclude-functions:
+        - io/ioutil.WriteFile
+        - io/ioutil.ReadFile
+        - (github.com/go-kit/log.Logger).Log
+        - io.Copy
+        - (github.com/opentracing/opentracing-go.Tracer).Inject
+    gocognit:
+      min-complexity: 31
+    goconst:
+      min-len: 2
+      min-occurrences: 4
+    gocritic:
+      disabled-checks:
+        - commentFormatting
+    gocyclo:
+      min-complexity: 10
+    gomoddirectives:
+      replace-allow-list:
+        - github.com/dolthub/go-mysql-server
+    govet:
+      enable:
+        - shadow
+    lll:
+      line-length: 140
+    nolintlint:
+      require-explanation: false
+      require-specific: false
+      allow-unused: false
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - dupl
+          - govet
+        path: _test\.go
+    paths:
+      - internal/proxyproto
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - internal/proxyproto
+      - third_party$
+      - builtin$
+      - examples$
