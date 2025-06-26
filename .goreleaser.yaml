@@ -19,6 +19,12 @@ builds:
       - "386"
       - amd64
       - arm64
+    ldflags:
+      - -s -w
+    tags:
+      - osusergo
+      - netgo
+      - static_build
 
 
 archives:
