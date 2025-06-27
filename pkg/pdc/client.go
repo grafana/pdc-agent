@@ -45,6 +45,10 @@ type Config struct {
 	// It is not a constant only to make it easier to override the endpoint in local development.
 	SignPublicKeyEndpoint string
 
+	// The PDC api endpoint used to register wireguard keys.
+	// It is not a constant only to make it easier to override the endpoint in local development.
+	RegisterWireguardKeyEndpoint string
+
 	// Used for local development.
 	// Contains headers that are included in each http request send to the pdc api.
 	DevHeaders map[string]string
@@ -80,12 +84,23 @@ func (cfg *Config) RegisterFlags(fs *flag.FlagSet) {
 // Client is a PDC API client
 type Client interface {
 	SignSSHKey(ctx context.Context, key []byte) (*SigningResponse, error)
+	RegisterWireguardKey(ctx context.Context, publicKey string, tunnelID string) (*WireguardRegistrationResponse, error)
 }
 
 // SigningResponse is the response received from a SSH key signing request
 type SigningResponse struct {
 	Certificate ssh.Certificate
 	KnownHosts  []byte
+}
+
+// WireguardRegistrationResponse is the response received from a Wireguard key registration request
+type WireguardRegistrationResponse struct {
+	ServerPublicKey string `json:"serverPublicKey"`
+	Message         string `json:"message"`
+	ServerEndpoint  string `json:"serverEndpoint"`
+	Success         bool   `json:"success"`
+	AssignedIP      string `json:"assignedIP"`
+	NetworkCIDR     string `json:"networkCIDR"`
 }
 
 func (sr *SigningResponse) UnmarshalJSON(data []byte) error {
@@ -134,6 +149,11 @@ func NewClient(cfg *Config, logger log.Logger) (Client, error) {
 		cfg.SignPublicKeyEndpoint = "/pdc/api/v1/sign-public-key"
 	}
 
+	// If the value has not been set for testing.
+	if cfg.RegisterWireguardKeyEndpoint == "" {
+		cfg.RegisterWireguardKeyEndpoint = "/pdc/api/v1/register-wireguard-key"
+	}
+
 	rc := retryablehttp.NewClient()
 	if cfg.RetryMax != 0 {
 		rc.RetryMax = cfg.RetryMax
@@ -179,6 +199,29 @@ func (c *pdcClient) SignSSHKey(ctx context.Context, key []byte) (*SigningRespons
 	}
 
 	return sr, nil
+}
+
+func (c *pdcClient) RegisterWireguardKey(ctx context.Context, publicKey string, tunnelID string) (*WireguardRegistrationResponse, error) {
+	start := time.Now()
+
+	resp, err := c.call(ctx, http.MethodPost, c.cfg.RegisterWireguardKeyEndpoint, nil, map[string]string{
+		"publicKey": publicKey,
+		"tunnelID":  tunnelID,
+	})
+	if err != nil {
+		c.metrics.signingRequests.WithLabelValues("error").Observe(time.Since(start).Seconds())
+		return nil, err
+	}
+
+	c.metrics.signingRequests.WithLabelValues("success").Observe(time.Since(start).Seconds())
+
+	wgResp := &WireguardRegistrationResponse{}
+	err = json.Unmarshal(resp, wgResp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal Wireguard registration response: %w", err)
+	}
+
+	return wgResp, nil
 }
 
 func (c *pdcClient) call(ctx context.Context, method, rpath string, params map[string]string, body map[string]string) ([]byte, error) {
