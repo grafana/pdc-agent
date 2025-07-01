@@ -58,6 +58,10 @@ type Config struct {
 	MetricsAddr  string
 	ParseMetrics bool
 
+	// HTTP proxy configuration
+	UseHTTPProxy  bool
+	HTTPProxyPort int
+
 	// Used for local development.
 	// DevPort is the port number for the PDC gateway
 	DevPort int
@@ -267,6 +271,11 @@ func (s *Client) SSHFlagsFromConfig() ([]string, error) {
 		"ServerAliveInterval": "15",
 		"ConnectTimeout":      "1",
 		"TCPKeepAlive":        "no",
+	}
+
+	// Add ProxyCommand if HTTP proxy is enabled
+	if s.cfg.UseHTTPProxy {
+		sshOptions["ProxyCommand"] = fmt.Sprintf("/usr/bin/nc -X connect -x 127.0.0.1:%d %%h %%p", s.cfg.HTTPProxyPort)
 	}
 
 	nonOptionFlags := []string{} // for backwards compatibility

@@ -47,6 +47,10 @@ type mainFlags struct {
 	APIFQDN     string
 	GatewayFQDN string
 
+	// HTTP proxy configuration
+	UseHTTPProxy  bool
+	HTTPProxyPort int
+
 	// The fields below were added to make local development easier.
 	//
 	// DevMode is true when the agent is being run locally while someone is working on it.
@@ -61,6 +65,9 @@ func (mf *mainFlags) RegisterFlags(fs *flag.FlagSet) {
 
 	fs.StringVar(&mf.APIFQDN, "api-fqdn", "", "FQDN for the PDC API. If set, this will take precedence over the cluster and domain flags")
 	fs.StringVar(&mf.GatewayFQDN, "gateway-fqdn", "", "FQDN for the PDC Gateway. If set, this will take precedence over the cluster and domain flags")
+
+	fs.BoolVar(&mf.UseHTTPProxy, "experimental-http-proxy", false, "Enable HTTP CONNECT proxy for SSH connections")
+	fs.IntVar(&mf.HTTPProxyPort, "experimental-http-proxy-port", 8092, "Port for the HTTP CONNECT proxy")
 
 	fs.BoolVar(&mf.DevMode, "dev-mode", false, "[DEVELOPMENT ONLY] run the agent in development mode")
 
@@ -101,6 +108,8 @@ func main() {
 	}
 
 	sshConfig.Args = os.Args[1:]
+	sshConfig.UseHTTPProxy = mf.UseHTTPProxy
+	sshConfig.HTTPProxyPort = mf.HTTPProxyPort
 	logger := setupLogger(mf.LogLevel)
 
 	level.Info(logger).Log("msg", "PDC agent info",
