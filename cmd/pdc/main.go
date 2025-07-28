@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/pdc-agent/pkg/metrics"
 	"github.com/grafana/pdc-agent/pkg/pdc"
 	"github.com/grafana/pdc-agent/pkg/ssh"
+	"github.com/grafana/pdc-agent/pkg/wireguard"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -50,7 +51,8 @@ type mainFlags struct {
 	// The fields below were added to make local development easier.
 	//
 	// DevMode is true when the agent is being run locally while someone is working on it.
-	DevMode bool
+	DevMode        bool
+	ConnectionMode string
 }
 
 func (mf *mainFlags) RegisterFlags(fs *flag.FlagSet) {
@@ -63,6 +65,7 @@ func (mf *mainFlags) RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&mf.GatewayFQDN, "gateway-fqdn", "", "FQDN for the PDC Gateway. If set, this will take precedence over the cluster and domain flags")
 
 	fs.BoolVar(&mf.DevMode, "dev-mode", false, "[DEVELOPMENT ONLY] run the agent in development mode")
+	fs.StringVar(&mf.ConnectionMode, "connection-mode", "ssh", "Connection mode: ssh or wireguard")
 
 	// flags should always take precedence over env vars
 	if mf.Cluster == "" {
@@ -91,10 +94,11 @@ func tryGetOpenSSHVersion() string {
 
 func main() {
 	sshConfig := ssh.DefaultConfig()
+	wgConfig := wireguard.DefaultConfig()
 	mf := &mainFlags{}
 	pdcClientCfg := &pdc.Config{}
 
-	usageFn, err := parseFlags(mf.RegisterFlags, sshConfig.RegisterFlags, pdcClientCfg.RegisterFlags)
+	usageFn, err := parseFlags(mf.RegisterFlags, sshConfig.RegisterFlags, pdcClientCfg.RegisterFlags, wgConfig.RegisterFlags)
 	if err != nil {
 		fmt.Println("cannot parse flags")
 		os.Exit(1)
@@ -143,7 +147,7 @@ func main() {
 		setDevelopmentConfig(mf.Domain, sshConfig, pdcClientCfg)
 	}
 
-	err = run(logger, sshConfig, pdcClientCfg)
+	err = run(logger, sshConfig, pdcClientCfg, wgConfig, mf.ConnectionMode)
 	if err != nil {
 		level.Error(logger).Log("err", err)
 		os.Exit(1)
@@ -160,13 +164,25 @@ func setDevelopmentConfig(domain string, sshCfg *ssh.Config, pdcClientCfg *pdc.C
 		"X-Access-Policy-ID": pdcClientCfg.DevNetwork,
 	}
 	pdcClientCfg.SignPublicKeyEndpoint = "/api/v1/sign-public-key"
+	pdcClientCfg.RegisterWireguardKeyEndpoint = "/api/v1/register-wireguard-key"
 
 	sshCfg.Port = sshCfg.DevPort
 	sshCfg.URL, _ = url.Parse(domain)
 	sshCfg.PDC = *pdcClientCfg
 }
 
-func run(logger log.Logger, sshConfig *ssh.Config, pdcConfig *pdc.Config) error {
+func run(logger log.Logger, sshConfig *ssh.Config, pdcConfig *pdc.Config, wgConfig *wireguard.Config, mode string) error {
+	switch mode {
+	case "ssh":
+		return runSSHMode(logger, sshConfig, pdcConfig)
+	case "wireguard":
+		return runWireguardMode(logger, pdcConfig, wgConfig)
+	default:
+		return fmt.Errorf("unknown connection mode: %s", mode)
+	}
+}
+
+func runSSHMode(logger log.Logger, sshConfig *ssh.Config, pdcConfig *pdc.Config) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -206,6 +222,75 @@ func run(logger log.Logger, sshConfig *ssh.Config, pdcConfig *pdc.Config) error 
 	_ = sshClient.AwaitTerminated(context.Background())
 
 	return nil
+}
+
+func runWireguardMode(logger log.Logger, pdcConfig *pdc.Config, wgConfig *wireguard.Config) error {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	pdcClient, err := pdc.NewClient(pdcConfig, logger)
+	if err != nil {
+		level.Error(logger).Log("msg", fmt.Sprintf("cannot initialise PDC client: %s", err))
+		return err
+	}
+
+	populateWireguardConfig(wgConfig, pdcConfig, logger)
+	if err := wgConfig.Validate(); err != nil {
+		level.Error(logger).Log("msg", fmt.Sprintf("invalid Wireguard config: %s", err))
+		return err
+	}
+
+	wgClient, err := wireguard.NewClient(*wgConfig, logger, pdcClient)
+	if err != nil {
+		level.Error(logger).Log("msg", fmt.Sprintf("cannot create Wireguard client: %s", err))
+		return err
+	}
+
+	// Register prometheus metrics
+	m := newPromMetrics()
+	prometheus.MustRegister(m.agentInfo)
+	if p, ok := pdcClient.(prometheus.Collector); ok {
+		prometheus.MustRegister(p)
+	}
+
+	m.agentInfo.WithLabelValues(version, "Wireguard", pdcConfig.HostedGrafanaID).Set(1)
+
+	// Start the Wireguard client
+	err = wgClient.Start(ctx)
+	if err != nil {
+		level.Error(logger).Log("msg", fmt.Sprintf("cannot start Wireguard client: %s", err))
+		return err
+	}
+
+	// Start the metrics server
+	ms := metrics.NewMetricsServer(logger, wgConfig.MetricsAddr)
+	go ms.Run()
+
+	level.Info(logger).Log("msg", "Wireguard client started, waiting for shutdown signal")
+
+	// Wait for shutdown signal
+	<-ctx.Done()
+
+	level.Info(logger).Log("msg", "shutting down Wireguard client")
+	return wgClient.Stop()
+}
+
+func populateWireguardConfig(wgConfig *wireguard.Config, pdcConfig *pdc.Config, logger log.Logger) {
+	// Extract PDC endpoint from URL
+	if pdcConfig.URL != nil {
+		hostname := pdcConfig.URL.Hostname()
+		// Resolve localhost to 127.0.0.1 for WireGuard
+		if hostname == "localhost" {
+			hostname = "127.0.0.1"
+		}
+		wgConfig.PDCEndpoint = hostname
+	}
+
+	// Generate tunnel ID from HostedGrafanaID if not provided
+	if wgConfig.TunnelID == "" {
+		tunnelID := pdcConfig.HostedGrafanaID
+		wgConfig.TunnelID = fmt.Sprintf("%s/%s", tunnelID, pdcConfig.DevNetwork)
+	}
 }
 
 func createURLs(cfg *mainFlags) (api *url.URL, gateway *url.URL, err error) {
