@@ -58,6 +58,9 @@ type Config struct {
 	MetricsAddr  string
 	ParseMetrics bool
 
+	// Connections is the number of connections to open
+	Connections int
+
 	// Used for local development.
 	// DevPort is the port number for the PDC gateway
 	DevPort int
@@ -91,6 +94,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.CertCheckCertExpiryPeriod, "cert-check-expiry-period", 1*time.Minute, "How often to check certificate validity. 0 means it is only checked at start")
 	f.StringVar(&cfg.MetricsAddr, "metrics-addr", ":8090", "HTTP server address to expose metrics on")
 	f.BoolVar(&cfg.ParseMetrics, "parse-metrics", true, "Enabled or disable parsing of metrics from the ssh logs")
+	f.IntVar(&cfg.Connections, "connections", 1, "Number of parallel ssh connections to open, adding more connections will increase total bandwidth to your network, the limit is 50 connections per agent")
 
 	f.IntVar(&cfg.DevPort, "dev-ssh-port", 2244, "[DEVELOPMENT ONLY] The port to use for agent connections to the PDC SSH gateway")
 
@@ -173,69 +177,78 @@ func (s *Client) starting(ctx context.Context) error {
 	}
 	level.Debug(s.logger).Log("msg", fmt.Sprintf("parsed flags: %s", flags))
 
-	retryOpts := retry.Opts{MaxBackoff: 16 * time.Second, InitialBackoff: 1 * time.Second}
-	go retry.Forever(retryOpts, func() error {
-		startTime := time.Now()
+	for c := 0; c < s.cfg.Connections; c++ {
+		retryOpts := retry.Opts{MaxBackoff: 16 * time.Second, InitialBackoff: 1 * time.Second}
+		go retry.Forever(retryOpts, func() (err error) {
+			startTime := time.Now()
+			connectionId := c + 1
+			connectionLogger := log.With(s.logger, "connection", connectionId)
 
-		cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
+			defer func() {
+				level.Info(connectionLogger).Log("msg", "connection finished, will try to reconnect", "error", err)
+			}()
 
-		var mParser *logMetricsParser
-		level.Debug(s.logger).Log("msg", "parsing metrics from logs", "enabled", s.cfg.ParseMetrics)
-		if s.cfg.ParseMetrics {
-			mParser = &logMetricsParser{
-				m:         s.metrics,
-				connStart: startTime,
+			cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
+
+			var mParser *logMetricsParser
+			level.Debug(connectionLogger).Log("msg", "parsing metrics from logs", "enabled", s.cfg.ParseMetrics)
+			if s.cfg.ParseMetrics {
+				mParser = &logMetricsParser{
+					m:          s.metrics,
+					connStart:  startTime,
+					connection: fmt.Sprintf("%d", connectionId),
+				}
 			}
-		}
 
-		// define a default error to return if the command fails. We may replace it
-		// with a resetBackoffError if we do not want the retry mechanism to pause
-		// before retrying.
-		err := errors.New("")
+			// define a default error to return if the command fails. We may replace it
+			// with a resetBackoffError if we do not want the retry mechanism to pause
+			// before retrying.
+			err = errors.New("")
 
-		cb := func() {
-			err = retry.ResetBackoffError{}
-		}
-
-		loggerWriter := NewLoggerWriterAdapter(s.logger, s.cfg.LogLevel, mParser, cb)
-		cmd.Stdout = loggerWriter
-		cmd.Stderr = loggerWriter
-
-		_ = cmd.Run()
-		if ctx.Err() != nil {
-			return nil // context was canceled
-		}
-
-		if cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == ConnectionAlreadyExistsCode {
-			level.Debug(s.logger).Log("msg", "server already had a connection for this tunnelID. trying a different server")
-			return retry.ResetBackoffError{}
-		}
-
-		if cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == ConnectionLimitReachedCode {
-			level.Info(s.logger).Log("msg", "limit of connections for stack and network reached. exiting")
-			os.Exit(1)
-		}
-
-		exitCode := cmd.ProcessState.ExitCode()
-		level.Info(s.logger).Log("msg", "ssh client exited. restarting", "exitCode", exitCode, "resetBackoff", errors.Is(err, retry.ResetBackoffError{}))
-		s.metrics.sshRestartsCount.WithLabelValues(fmt.Sprintf("%d", exitCode)).Inc()
-
-		// Check keys and cert validity before restart, create new cert if required.
-		// This covers the case where a certificate has become invalid since the last start.
-		// Do not return here: we want to keep trying to connect in case the PDC API
-		// is temporarily unavailable.
-		//
-		// They keymanager has logic to perform a background key refresh, but this
-		// logic should stay in place in case that is disabled.
-		if s.km != nil {
-			kerr := s.km.CreateKeys(ctx, false)
-			if kerr != nil {
-				level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", kerr)
+			cb := func() {
+				err = retry.ResetBackoffError{}
 			}
-		}
 
-		return err
-	})
+			loggerWriter := NewLoggerWriterAdapter(connectionLogger, s.cfg.LogLevel, mParser, cb)
+			cmd.Stdout = loggerWriter
+			cmd.Stderr = loggerWriter
+
+			err = cmd.Run()
+			if ctx.Err() != nil {
+				return nil // context was canceled
+			}
+
+			if cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == ConnectionAlreadyExistsCode {
+				level.Debug(connectionLogger).Log("msg", "server already had a connection for this tunnelID. trying a different server")
+				return retry.ResetBackoffError{}
+			}
+
+			if cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == ConnectionLimitReachedCode {
+				level.Info(connectionLogger).Log("msg", "limit of connections for stack and network reached, reach out to grafana support to increase connection limits. exiting")
+				os.Exit(1)
+			}
+
+			exitCode := cmd.ProcessState.ExitCode()
+			level.Info(connectionLogger).Log("msg", "ssh client exited. restarting", "exitCode", exitCode, "resetBackoff", errors.Is(err, retry.ResetBackoffError{}))
+			s.metrics.sshRestartsCount.WithLabelValues(fmt.Sprintf("%d", connectionId), fmt.Sprintf("%d", exitCode)).Inc()
+
+			// Check keys and cert validity before restart, create new cert if required.
+			// This covers the case where a certificate has become invalid since the last start.
+			// Do not return here: we want to keep trying to connect in case the PDC API
+			// is temporarily unavailable.
+			//
+			// They keymanager has logic to perform a background key refresh, but this
+			// logic should stay in place in case that is disabled.
+			if s.km != nil {
+				kerr := s.km.CreateKeys(ctx, false)
+				if kerr != nil {
+					level.Error(connectionLogger).Log("msg", "could not check or generate certificate", "error", kerr)
+				}
+			}
+
+			return err
+		})
+	}
 
 	return nil
 }
