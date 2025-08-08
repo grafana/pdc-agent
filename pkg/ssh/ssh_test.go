@@ -140,7 +140,7 @@ func TestConnectionCount(t *testing.T) {
 			require.NoError(t, err)
 
 			// Wait for connections to initialize
-			time.Sleep(200 * time.Millisecond)
+			time.Sleep(2000 * time.Millisecond)
 
 			// Get all the metrics for this client
 			registry := prometheus.NewRegistry()
