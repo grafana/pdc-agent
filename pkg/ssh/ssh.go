@@ -181,8 +181,8 @@ func (s *Client) starting(ctx context.Context) error {
 		retryOpts := retry.Opts{MaxBackoff: 16 * time.Second, InitialBackoff: 1 * time.Second}
 		go retry.Forever(retryOpts, func() (err error) {
 			startTime := time.Now()
-			connectionId := c + 1
-			connectionLogger := log.With(s.logger, "connection", connectionId)
+			connectionID := c + 1
+			connectionLogger := log.With(s.logger, "connection", connectionID)
 
 			defer func() {
 				level.Info(connectionLogger).Log("msg", "connection finished, will try to reconnect", "error", err)
@@ -196,7 +196,7 @@ func (s *Client) starting(ctx context.Context) error {
 				mParser = &logMetricsParser{
 					m:          s.metrics,
 					connStart:  startTime,
-					connection: fmt.Sprintf("%d", connectionId),
+					connection: fmt.Sprintf("%d", connectionID),
 				}
 			}
 
@@ -230,7 +230,7 @@ func (s *Client) starting(ctx context.Context) error {
 
 			exitCode := cmd.ProcessState.ExitCode()
 			level.Info(connectionLogger).Log("msg", "ssh client exited. restarting", "exitCode", exitCode, "resetBackoff", errors.Is(err, retry.ResetBackoffError{}))
-			s.metrics.sshRestartsCount.WithLabelValues(fmt.Sprintf("%d", connectionId), fmt.Sprintf("%d", exitCode)).Inc()
+			s.metrics.sshRestartsCount.WithLabelValues(fmt.Sprintf("%d", connectionID), fmt.Sprintf("%d", exitCode)).Inc()
 
 			// Check keys and cert validity before restart, create new cert if required.
 			// This covers the case where a certificate has become invalid since the last start.

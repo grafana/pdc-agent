@@ -9,10 +9,12 @@ import (
 	"path"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/pdc-agent/pkg/pdc"
 	"github.com/grafana/pdc-agent/pkg/ssh"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
@@ -95,6 +97,85 @@ func TestStartingAndStopping(t *testing.T) {
 	_ = client.AwaitTerminated(ctx)
 	assert.Equal(t, "Terminated", client.State().String())
 
+}
+
+func TestConnectionCount(t *testing.T) {
+	tests := []struct {
+		name        string
+		connections int
+		expectedIDs []string
+	}{
+		{
+			name:        "single connection",
+			connections: 1,
+			expectedIDs: []string{"1"},
+		},
+		{
+			name:        "two connections",
+			connections: 2,
+			expectedIDs: []string{"1", "2"},
+		},
+		{
+			name:        "five connections",
+			connections: 5,
+			expectedIDs: []string{"1", "2", "3", "4", "5"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// create a config with the number of connections per test case
+			cfg := ssh.DefaultConfig()
+			cfg.Connections = tt.connections
+			client := newTestClient(t, cfg, true)
+
+			ctx := context.Background()
+
+			// start the client
+			err := client.StartAsync(ctx)
+			require.NoError(t, err)
+
+			// make sure the client runs
+			err = client.AwaitRunning(ctx)
+			require.NoError(t, err)
+
+			// Wait for connections to initialize
+			time.Sleep(200 * time.Millisecond)
+
+			// Get all the metrics for this client
+			registry := prometheus.NewRegistry()
+			registry.MustRegister(client)
+
+			metricFamilies, err := registry.Gather()
+			require.NoError(t, err)
+
+			// Check one of the metrics to verify correct number of connections
+			connectionLabels := make(map[string]bool)
+			for _, mf := range metricFamilies {
+				if mf.GetName() == "pdc_agent_ssh_restarts_total" {
+					for _, metric := range mf.GetMetric() {
+						for _, label := range metric.GetLabel() {
+							if label.GetName() == "connection" {
+								connectionLabels[label.GetValue()] = true
+							}
+						}
+					}
+				}
+			}
+
+			assert.Equal(t, len(tt.expectedIDs), len(connectionLabels),
+				"Expected %d connections, but found %d", len(tt.expectedIDs), len(connectionLabels))
+
+			for _, expectedID := range tt.expectedIDs {
+				assert.True(t, connectionLabels[expectedID],
+					"Expected connection %s but it was not found", expectedID)
+			}
+
+			// Cleanup
+			client.StopAsync()
+			_ = client.AwaitTerminated(ctx)
+		})
+	}
 }
 
 // testClient returns a new SSH client with a mocked command
