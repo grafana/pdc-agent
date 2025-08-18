@@ -2,13 +2,18 @@ package ssh_test
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"encoding/pem"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/pdc-agent/pkg/pdc"
@@ -337,6 +342,78 @@ func TestLoggerWriterAdapter(t *testing.T) {
 
 		})
 	}
+}
+
+func TestClient(t *testing.T) {
+	mu := sync.Mutex{}
+	connCount := 0
+
+	// Create a host key pair
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	signer, err := gossh.NewSignerFromKey(key)
+	require.NoError(t, err)
+
+	// create SSH server config. uses vanilla crypto/ssh rather than gliderlabs/ssh to avoid new dependencies
+	config := &gossh.ServerConfig{
+		NoClientAuth: true,
+	}
+	config.AddHostKey(signer)
+
+	// Start the SSH server listener
+	listener, err := net.Listen("tcp", ":2200")
+	require.NoError(t, err)
+	defer listener.Close()
+	go func() {
+		for {
+			tcpConn, err := listener.Accept()
+			// DONT "require" in here as it will panic if its called after the test has finished
+			// require.NoError(t, err)
+			if err != nil {
+				return
+			}
+			// Before use, a handshake must be performed on the incoming net.Conn.
+			sshConn, _, _, err := gossh.NewServerConn(tcpConn, config)
+			// DONT "require" in here as it will panic if its called after the test has finished
+			// require.NoError(t, err)
+			if err != nil {
+				continue
+			}
+
+			fmt.Printf("New SSH connection from %s (	%s)\n", sshConn.RemoteAddr(), sshConn.ClientVersion())
+			mu.Lock()
+			connCount++
+			mu.Unlock()
+		}
+	}()
+
+	// create SSH client config
+	cfg := ssh.DefaultConfig()
+	cfg.URL = mustParseURL("0.0.0.0")
+	cfg.Port = 2200
+	cfg.PDC = pdc.Config{
+		HostedGrafanaID: "123",
+	}
+	// strip out some config to make the ssh handshake succeed
+	cfg.SSHFlags = []string{
+		"-o UserKnownHostsFile=/dev/null",
+		"-o StrictHostKeyChecking=no",
+	}
+
+	mClient := mockPDCClient{}
+	km := ssh.NewKeyManager(cfg, log.NewNopLogger(), mClient)
+
+	client := ssh.NewClient(cfg, log.NewNopLogger(), km)
+
+	client.StartAsync(context.Background())
+	client.AwaitRunning(context.Background()) // not strictly required
+
+	// wait a little bit for the connections to be established
+	<-time.After(100 * time.Millisecond)
+
+	mu.Lock()
+	assert.Equal(t, 1, connCount)
+	mu.Unlock()
 }
 
 type assertLogger struct {

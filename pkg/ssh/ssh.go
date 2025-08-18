@@ -177,6 +177,7 @@ func (s *Client) starting(ctx context.Context) error {
 	go retry.Forever(retryOpts, func() error {
 		startTime := time.Now()
 
+		fmt.Printf("Starting ssh command: %s %s\n", s.SSHCmd, strings.Join(flags, " "))
 		cmd := exec.CommandContext(ctx, s.SSHCmd, flags...)
 
 		var mParser *logMetricsParser
@@ -352,6 +353,7 @@ func (adapter LoggerWriterAdapter) Write(p []byte) (n int, err error) {
 	// msg="debug: some message"
 	// msg="debug2: some message"
 	for _, msg := range bytes.Split(p, []byte{'\r', '\n'}) {
+		fmt.Printf("msg: %s\n", string(msg))
 		if len(msg) == 0 {
 			continue
 		}
