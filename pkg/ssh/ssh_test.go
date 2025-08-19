@@ -126,7 +126,7 @@ func (s *testServer) Start() error {
 	config.AddHostKey(signer)
 
 	// Start the SSH server listener
-	listener, err := net.Listen("tcp", ":2200")
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", ":2200")
 	if err != nil {
 		return err
 	}
@@ -187,7 +187,7 @@ func TestConnectionCount(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := &testServer{}
 			require.NoError(t, srv.Start())
-			defer srv.Stop()
+			defer func() { _ = srv.Stop() }()
 
 			cfg := ssh.DefaultConfig()
 			cfg.Port = 2200
@@ -222,7 +222,10 @@ func TestConnectionCount(t *testing.T) {
 			// Wait for connections to initialize
 			time.Sleep(50 * time.Millisecond)
 
-			require.Equal(t, tt.connections, srv.connectionsCount)
+			srv.mu.Lock()
+			actualConnections := srv.connectionsCount
+			srv.mu.Unlock()
+			require.Equal(t, tt.connections, actualConnections)
 
 			// Cleanup
 			client.StopAsync()

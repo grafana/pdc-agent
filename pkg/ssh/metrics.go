@@ -29,7 +29,7 @@ func newPromMetrics() *promMetrics {
 	return &promMetrics{
 		sshConnectionsCount: prometheus.NewGauge(
 			prometheus.GaugeOpts{
-				Name:      "ssh_connections_total",
+				Name:      "ssh_connections",
 				Help:      "Number of open SSH connections",
 				Namespace: "pdc_agent",
 			},
