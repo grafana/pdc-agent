@@ -18,14 +18,22 @@ var (
 )
 
 type promMetrics struct {
+	sshConnectionsCount prometheus.Gauge // open ssh connections ready to be used/being used
 	sshRestartsCount    *prometheus.CounterVec
-	tcpConnectionsCount *prometheus.CounterVec
+	tcpConnectionsCount *prometheus.CounterVec // connections to the target host
 	timeToConnect       *prometheus.HistogramVec
 	openChannelsCount   *prometheus.GaugeVec
 }
 
 func newPromMetrics() *promMetrics {
 	return &promMetrics{
+		sshConnectionsCount: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Name:      "ssh_connections_total",
+				Help:      "Number of open SSH connections",
+				Namespace: "pdc_agent",
+			},
+		),
 		sshRestartsCount: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name:      "ssh_restarts_total",

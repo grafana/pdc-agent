@@ -2,21 +2,25 @@ package ssh_test
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/pem"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/pdc-agent/pkg/pdc"
 	"github.com/grafana/pdc-agent/pkg/ssh"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	gossh "golang.org/x/crypto/ssh"
 )
 
@@ -99,6 +103,63 @@ func TestStartingAndStopping(t *testing.T) {
 
 }
 
+type testServer struct {
+	connectionsCount int
+	mu               sync.Mutex
+	listener         net.Listener
+}
+
+func (s *testServer) Start() error {
+	// Create a host key pair
+	_, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return err
+	}
+	signer, err := gossh.NewSignerFromKey(key)
+	if err != nil {
+		return err
+	}
+
+	config := &gossh.ServerConfig{
+		NoClientAuth: true,
+	}
+	config.AddHostKey(signer)
+
+	// Start the SSH server listener
+	listener, err := net.Listen("tcp", ":2200")
+	if err != nil {
+		return err
+	}
+	s.listener = listener
+	go func() {
+		for {
+			tcpConn, err := listener.Accept()
+			// DONT "require" in here as it will panic if its called after the test has finished
+			// require.NoError(t, err)
+			if err != nil {
+				return
+			}
+			// Before use, a handshake must be performed on the incoming net.Conn.
+			_, _, _, err = gossh.NewServerConn(tcpConn, config)
+			// DONT "require" in here as it will panic if its called after the test has finished
+			// require.NoError(t, err)
+			if err != nil {
+				continue
+			}
+
+			s.mu.Lock()
+			s.connectionsCount++
+			s.mu.Unlock()
+		}
+	}()
+
+	return nil
+}
+
+func (s *testServer) Stop() error {
+	return s.listener.Close()
+}
+
 func TestConnectionCount(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -124,10 +185,29 @@ func TestConnectionCount(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// create a config with the number of connections per test case
+			srv := &testServer{}
+			require.NoError(t, srv.Start())
+			defer srv.Stop()
+
 			cfg := ssh.DefaultConfig()
+			cfg.Port = 2200
+			cfg.URL = mustParseURL("0.0.0.0")
+			cfg.PDC = pdc.Config{
+				HostedGrafanaID: "123",
+			}
+			// strip out some config to make the ssh handshake succeed
+			cfg.SSHFlags = []string{
+				"-o UserKnownHostsFile=/dev/null",
+				"-o StrictHostKeyChecking=no",
+			}
+			// create a config with the number of connections per test case
 			cfg.Connections = tt.connections
-			client := newTestClient(t, cfg, true)
+
+			// create a live client
+			logger := log.NewNopLogger()
+			mClient := mockPDCClient{}
+			km := ssh.NewKeyManager(cfg, logger, mClient)
+			client := ssh.NewClient(cfg, logger, km)
 
 			ctx := context.Background()
 
@@ -140,36 +220,9 @@ func TestConnectionCount(t *testing.T) {
 			require.NoError(t, err)
 
 			// Wait for connections to initialize
-			time.Sleep(2000 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 
-			// Get all the metrics for this client
-			registry := prometheus.NewRegistry()
-			registry.MustRegister(client)
-
-			metricFamilies, err := registry.Gather()
-			require.NoError(t, err)
-
-			// Check one of the metrics to verify correct number of connections
-			connectionLabels := make(map[string]bool)
-			for _, mf := range metricFamilies {
-				if mf.GetName() == "pdc_agent_ssh_restarts_total" {
-					for _, metric := range mf.GetMetric() {
-						for _, label := range metric.GetLabel() {
-							if label.GetName() == "connection" {
-								connectionLabels[label.GetValue()] = true
-							}
-						}
-					}
-				}
-			}
-
-			assert.Equal(t, len(tt.expectedIDs), len(connectionLabels),
-				"Expected %d connections, but found %d", len(tt.expectedIDs), len(connectionLabels))
-
-			for _, expectedID := range tt.expectedIDs {
-				assert.True(t, connectionLabels[expectedID],
-					"Expected connection %s but it was not found", expectedID)
-			}
+			require.Equal(t, tt.connections, srv.connectionsCount)
 
 			// Cleanup
 			client.StopAsync()

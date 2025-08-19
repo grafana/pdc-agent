@@ -139,7 +139,7 @@ func (s *Client) Collect(ch chan<- prometheus.Metric) {
 	s.metrics.openChannelsCount.Collect(ch)
 	s.metrics.tcpConnectionsCount.Collect(ch)
 	s.metrics.timeToConnect.Collect(ch)
-
+	s.metrics.sshConnectionsCount.Collect(ch)
 }
 
 func (s *Client) Describe(ch chan<- *prometheus.Desc) {
@@ -147,6 +147,7 @@ func (s *Client) Describe(ch chan<- *prometheus.Desc) {
 	s.metrics.openChannelsCount.Describe(ch)
 	s.metrics.tcpConnectionsCount.Describe(ch)
 	s.metrics.timeToConnect.Describe(ch)
+	s.metrics.sshConnectionsCount.Describe(ch)
 }
 
 func (s *Client) starting(ctx context.Context) error {
@@ -177,8 +178,8 @@ func (s *Client) starting(ctx context.Context) error {
 	}
 	level.Debug(s.logger).Log("msg", fmt.Sprintf("parsed flags: %s", flags))
 
+	retryOpts := retry.Opts{MaxBackoff: 16 * time.Second, InitialBackoff: 1 * time.Second}
 	for c := 0; c < s.cfg.Connections; c++ {
-		retryOpts := retry.Opts{MaxBackoff: 16 * time.Second, InitialBackoff: 1 * time.Second}
 		go retry.Forever(retryOpts, func() (err error) {
 			startTime := time.Now()
 			connectionID := c + 1
@@ -212,8 +213,9 @@ func (s *Client) starting(ctx context.Context) error {
 			loggerWriter := NewLoggerWriterAdapter(connectionLogger, s.cfg.LogLevel, mParser, cb)
 			cmd.Stdout = loggerWriter
 			cmd.Stderr = loggerWriter
-
+			s.metrics.sshConnectionsCount.Inc()
 			err = cmd.Run()
+			s.metrics.sshConnectionsCount.Dec()
 			if ctx.Err() != nil {
 				return nil // context was canceled
 			}
