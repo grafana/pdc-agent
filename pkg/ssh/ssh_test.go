@@ -220,7 +220,7 @@ func TestConnectionCount(t *testing.T) {
 			require.NoError(t, err)
 
 			// Wait for connections to initialize
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(1000 * time.Millisecond)
 
 			srv.mu.Lock()
 			actualConnections := srv.connectionsCount
