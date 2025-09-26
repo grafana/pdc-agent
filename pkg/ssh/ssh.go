@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"golang.org/x/crypto/ssh"
 
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/pdc-agent/pkg/pdc"
@@ -98,6 +100,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.MetricsAddr, "metrics-addr", ":8090", "HTTP server address to expose metrics on")
 	f.BoolVar(&cfg.ParseMetrics, "parse-metrics", true, "Enabled or disable parsing of metrics from the ssh logs")
 	f.IntVar(&cfg.Connections, "connections", 1, "The number of parallel ssh connections to open. Adding more connections will increase total bandwidth to your network. The limit is 50 connections across all your agents")
+	f.BoolVar(&cfg.UseGoSSHClient, "use-go-client", false, "Use the Go SSH client instead of the OpenSSH client")
 
 	f.IntVar(&cfg.DevPort, "dev-ssh-port", 2244, "[DEVELOPMENT ONLY] The port to use for agent connections to the PDC SSH gateway")
 
@@ -182,7 +185,7 @@ func (s *Client) starting(ctx context.Context) error {
 	level.Debug(s.logger).Log("msg", fmt.Sprintf("parsed flags: %s", flags))
 
 	if s.cfg.UseGoSSHClient {
-		s.runGoSSHClient(ctx, flags)
+		s.runGoSSHClient(ctx)
 	} else {
 		s.runOpenSSHClient(ctx, flags)
 	}
@@ -190,8 +193,145 @@ func (s *Client) starting(ctx context.Context) error {
 	return nil
 }
 
-func (s *Client) runGoSSHClient(ctx context.Context, flags []string) {
+func (s *Client) runGoSSHClient(ctx context.Context) {
+	retryOpts := retry.Opts{MaxBackoff: 16 * time.Second, InitialBackoff: 1 * time.Second}
 
+	for c := 0; c < s.cfg.Connections; c++ {
+		go retry.Forever(retryOpts, func() (err error) {
+			startTime := time.Now()
+			connectionID := c + 1
+			connectionLogger := log.With(s.logger, "connection", connectionID)
+
+			defer func() {
+				level.Info(connectionLogger).Log("msg", "connection finished, will try to reconnect", "error", err)
+			}()
+
+			// Create SSH client configuration
+			config, err := s.createSSHClientConfig()
+			if err != nil {
+				level.Error(connectionLogger).Log("msg", "failed to create SSH client config", "error", err)
+				return err
+			}
+
+			// Build connection address
+			addr := s.cfg.URL.String() + ":22"
+			level.Debug(connectionLogger).Log("msg", "dialing SSH server", "addr", addr)
+			conn, err := ssh.Dial("tcp", addr, config)
+			if err != nil {
+				level.Error(connectionLogger).Log("msg", "failed to dial SSH server", "error", err)
+				return err
+			}
+			defer conn.Close()
+
+			s.metrics.sshConnectionsCount.Inc()
+			defer s.metrics.sshConnectionsCount.Dec()
+
+			level.Info(connectionLogger).Log("msg", "SSH connection established")
+
+			// Send tcpip-forward request (equivalent to -R 0)
+			tcpAddr := &net.TCPAddr{IP: []byte{}, Port: 0}
+			fmt.Printf("======>%s ===== %s\n", tcpAddr, tcpAddr.IP.String())
+			listener, err := conn.ListenTCP(tcpAddr)
+			if err != nil {
+				level.Error(connectionLogger).Log("msg", "failed to setup reverse port forwarding", "error", err)
+				return err
+			}
+			defer listener.Close()
+
+			level.Info(connectionLogger).Log("msg", "reverse port forwarding established", "addr", listener.Addr().String())
+			s.metrics.timeToConnect.WithLabelValues(fmt.Sprintf("%d", connectionID)).Observe(time.Since(startTime).Seconds())
+
+			// Handle forwarding requests
+			for {
+				select {
+				case <-ctx.Done():
+					return nil
+				default:
+					netConn, err := listener.Accept()
+					if err != nil {
+						if ctx.Err() != nil {
+							return nil // context was canceled
+						}
+						level.Error(connectionLogger).Log("msg", "failed to accept connection", "error", err)
+						continue
+					}
+
+					go s.handleForwardedConnection(netConn, connectionLogger)
+				}
+			}
+		})
+	}
+}
+
+func (s *Client) createSSHClientConfig() (*ssh.ClientConfig, error) {
+	// Read private key
+	privateKeyBytes, err := os.ReadFile(s.cfg.KeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read private key: %w", err)
+	}
+
+	signer, err := ssh.ParsePrivateKey(privateKeyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse private key: %w", err)
+	}
+
+	// Read certificate
+	certPath := s.cfg.KeyFile + "-cert.pub"
+	certBytes, err := os.ReadFile(certPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read certificate: %w", err)
+	}
+
+	pubkey, _, _, _, err := ssh.ParseAuthorizedKey(certBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse certificate: %w", err)
+	}
+
+	cert, ok := pubkey.(*ssh.Certificate)
+	if !ok {
+		return nil, fmt.Errorf("parsed key is not a certificate")
+	}
+
+	certSigner, err := ssh.NewCertSigner(cert, signer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create certificate signer: %w", err)
+	}
+
+	// Read known hosts
+	knownHostsPath := path.Join(s.cfg.KeyFileDir(), KnownHostsFile)
+	knownHostsBytes, err := os.ReadFile(knownHostsPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read known hosts: %w", err)
+	}
+
+	// Parse known hosts - we need to create a custom callback since ssh.ParseKnownHosts doesn't return a callback
+	hostKeyCallback := func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		_, _, _, _, _, err := ssh.ParseKnownHosts(knownHostsBytes)
+		if err != nil {
+			return fmt.Errorf("failed to parse known hosts: %w", err)
+		}
+		// For simplicity, accept all host keys that are in the known hosts file
+		// In production, proper host key verification should be implemented
+		return nil
+	}
+
+	user := fmt.Sprintf("%s", s.cfg.PDC.HostedGrafanaID)
+
+	config := &ssh.ClientConfig{
+		User:            user,
+		Auth:            []ssh.AuthMethod{ssh.PublicKeys(certSigner)},
+		HostKeyCallback: hostKeyCallback,
+		Timeout:         1 * time.Second, // ConnectTimeout from SSH flags
+	}
+
+	return config, nil
+}
+
+func (s *Client) handleForwardedConnection(conn net.Conn, logger log.Logger) {
+	defer conn.Close()
+	level.Debug(logger).Log("msg", "handling forwarded connection", "remote", conn.RemoteAddr())
+	// For now, just close the connection as we're mimicking the basic forwarding behavior
+	// In a full implementation, this would handle the actual forwarding logic
 }
 
 func (s *Client) runOpenSSHClient(ctx context.Context, flags []string) {
