@@ -64,6 +64,9 @@ type Config struct {
 	// Used for local development.
 	// DevPort is the port number for the PDC gateway
 	DevPort int
+
+	// When enabled, use a go implementation of the SSH client, instead of OpenSSH.
+	UseGoSSHClient bool
 }
 
 // DefaultConfig returns a Config with some sensible defaults set
@@ -178,6 +181,20 @@ func (s *Client) starting(ctx context.Context) error {
 	}
 	level.Debug(s.logger).Log("msg", fmt.Sprintf("parsed flags: %s", flags))
 
+	if s.cfg.UseGoSSHClient {
+		s.runGoSSHClient(ctx, flags)
+	} else {
+		s.runOpenSSHClient(ctx, flags)
+	}
+
+	return nil
+}
+
+func (s *Client) runGoSSHClient(ctx context.Context, flags []string) {
+
+}
+
+func (s *Client) runOpenSSHClient(ctx context.Context, flags []string) {
 	retryOpts := retry.Opts{MaxBackoff: 16 * time.Second, InitialBackoff: 1 * time.Second}
 	for c := 0; c < s.cfg.Connections; c++ {
 		go retry.Forever(retryOpts, func() (err error) {
@@ -251,8 +268,6 @@ func (s *Client) starting(ctx context.Context) error {
 			return err
 		})
 	}
-
-	return nil
 }
 
 func (s *Client) stopping(err error) error {
