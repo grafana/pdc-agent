@@ -6,7 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	stdlog "log"
 	"net"
 	"net/url"
 	"os"
@@ -425,11 +424,8 @@ func (s *Client) handleForwardedConnection(channel ssh.Channel, logger log.Logge
 
 	// Create a SOCKS5 server to handle this single connection
 	// The server will read the SOCKS5 request, dial the destination, and proxy data
-	//
-	// TODO I think we can write an adapter here instead of using std logger
-	stdLogger := stdlog.New(log.NewStdlibAdapter(logger), "", 0)
 	server := socks5.NewServer(
-		socks5.WithLogger(socks5.NewLogger(stdLogger)),
+		socks5.WithLogger(&socks5LoggerAdapter{logger: logger}),
 		socks5.WithRule(&connectOnlyRule{}),
 		// TODO add middleware or handler to add some telemetry
 		// TODO (stretch) extract trace info from metadata fields?
@@ -439,6 +435,15 @@ func (s *Client) handleForwardedConnection(channel ssh.Channel, logger log.Logge
 	if err := server.ServeConn(channelConn); err != nil {
 		level.Debug(logger).Log("msg", "SOCKS5 connection ended", "error", err)
 	}
+}
+
+// socks5LoggerAdapter adapts go-kit logger to socks5.Logger interface
+type socks5LoggerAdapter struct {
+	logger log.Logger
+}
+
+func (a *socks5LoggerAdapter) Errorf(format string, args ...interface{}) {
+	level.Error(a.logger).Log("msg", fmt.Sprintf(format, args...))
 }
 
 // connectOnlyRule is a RuleSet that only allows CONNECT commands.
