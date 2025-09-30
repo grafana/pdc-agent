@@ -438,9 +438,6 @@ func (s *Client) handleForwardedConnection(channel ssh.Channel, logger log.Logge
 		s.metrics.socks5ConnectionDuration.Observe(time.Since(start).Seconds())
 	}()
 
-	// The channel carries SOCKS5 protocol data from the gateway.
-	// We need to act as a SOCKS5 server: read the request, dial the target, and proxy data.
-
 	// Wrap our channel as a net.Conn
 	channelConn := &channelNetConn{Channel: channel}
 
