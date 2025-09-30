@@ -26,6 +26,16 @@ const (
 	KnownHostsFile = "grafana_pdc_known_hosts"
 )
 
+// InMemoryKeyMaterial holds SSH keys and certificate in memory
+// for the Go SSH client. This avoids file collisions when running
+// multiple agents on the same machine.
+type InMemoryKeyMaterial struct {
+	PrivateKey  ed25519.PrivateKey
+	PublicKey   ed25519.PublicKey
+	Certificate *ssh.Certificate
+	KnownHosts  []byte
+}
+
 // TODO
 // KeyManager implements KeyManager. If needed, it gets new certificates signed
 // by the PDC API.
@@ -353,4 +363,94 @@ func (km KeyManager) writeCertFile(data []byte) error {
 func (km KeyManager) writeHashFile(data []byte) error {
 	path := path.Join(km.cfg.KeyFile + "_hash")
 	return os.WriteFile(path, data, 0600)
+}
+
+// CreateInMemoryKeys generates new keys and certificate entirely in memory.
+// This is used by the Go SSH client to avoid file collisions when running
+// multiple agents on the same machine.
+func (km KeyManager) CreateInMemoryKeys(ctx context.Context) (*InMemoryKeyMaterial, error) {
+	level.Info(km.logger).Log("msg", "generating in-memory SSH keys and certificate")
+
+	// Generate ED25519 keypair
+	pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate key pair: %w", err)
+	}
+
+	// Convert to SSH public key format for signing
+	sshPubKey, err := ssh.NewPublicKey(pubKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create SSH public key: %w", err)
+	}
+
+	// Request certificate from PDC API
+	pubKeyBytes := ssh.MarshalAuthorizedKey(sshPubKey)
+	resp, err := km.client.SignSSHKey(ctx, pubKeyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("key signing request failed: %w", err)
+	}
+
+	if resp == nil {
+		return nil, errors.New("received empty response from PDC API")
+	}
+
+	v := time.Unix(int64(resp.Certificate.ValidBefore), 0)
+	level.Info(km.logger).Log("msg", "in-memory SSH certificate generated", "validfor", time.Until(v))
+
+	keyMaterial := &InMemoryKeyMaterial{
+		PrivateKey:  privKey,
+		PublicKey:   pubKey,
+		Certificate: &resp.Certificate,
+		KnownHosts:  resp.KnownHosts,
+	}
+
+	// Optionally write to disk for debugging
+	if km.cfg.WriteKeysForDebug {
+		if err := km.writeInMemoryKeysToDisk(keyMaterial); err != nil {
+			level.Warn(km.logger).Log("msg", "failed to write keys to disk for debugging", "error", err)
+		} else {
+			level.Info(km.logger).Log("msg", "debug keys written to disk", "path", km.cfg.KeyFileDir())
+		}
+	}
+
+	return keyMaterial, nil
+}
+
+// writeInMemoryKeysToDisk writes in-memory keys to disk for debugging purposes
+func (km KeyManager) writeInMemoryKeysToDisk(keyMaterial *InMemoryKeyMaterial) error {
+	// Ensure directory exists
+	if err := os.MkdirAll(km.cfg.KeyFileDir(), 0774); err != nil && !os.IsExist(err) {
+		return err
+	}
+
+	// Write private key in OpenSSH format
+	pemKey := &pem.Block{
+		Type:  "OPENSSH PRIVATE KEY",
+		Bytes: edkey.MarshalED25519PrivateKey(keyMaterial.PrivateKey),
+	}
+	pemPrivKey := pem.EncodeToMemory(pemKey)
+	if err := km.writeKeyFile(pemPrivKey); err != nil {
+		return err
+	}
+
+	// Write public key
+	sshPubKey, err := ssh.NewPublicKey(keyMaterial.PublicKey)
+	if err != nil {
+		return err
+	}
+	if err := km.writePubKeyFile(ssh.MarshalAuthorizedKey(sshPubKey)); err != nil {
+		return err
+	}
+
+	// Write certificate
+	if err := km.writeCertFile(ssh.MarshalAuthorizedKey(keyMaterial.Certificate)); err != nil {
+		return err
+	}
+
+	// Write known hosts
+	if err := km.writeKnownHostsFile(keyMaterial.KnownHosts); err != nil {
+		return err
+	}
+
+	return nil
 }

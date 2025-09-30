@@ -96,6 +96,10 @@ type Config struct {
 
 	// When enabled, use a go implementation of the SSH client, instead of OpenSSH.
 	UseGoSSHClient bool
+
+	// WriteKeysForDebug optionally writes in-memory keys to disk for debugging.
+	// Only used when UseGoSSHClient is true.
+	WriteKeysForDebug bool
 }
 
 // DefaultConfig returns a Config with some sensible defaults set
@@ -128,6 +132,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.ParseMetrics, "parse-metrics", true, "Enabled or disable parsing of metrics from the ssh logs")
 	f.IntVar(&cfg.Connections, "connections", 1, "The number of parallel ssh connections to open. Adding more connections will increase total bandwidth to your network. The limit is 50 connections across all your agents")
 	f.BoolVar(&cfg.UseGoSSHClient, "use-go-client", false, "Use the Go SSH client instead of the OpenSSH client")
+	f.BoolVar(&cfg.WriteKeysForDebug, "write-keys-for-debug", false, "Write in-memory keys to disk for debugging (only used with --use-go-client)")
 
 	f.IntVar(&cfg.DevPort, "dev-ssh-port", 2244, "[DEVELOPMENT ONLY] The port to use for agent connections to the PDC SSH gateway")
 
@@ -241,8 +246,15 @@ func (s *Client) runGoSSHClient(ctx context.Context) {
 				level.Info(connectionLogger).Log("msg", "connection finished, will try to reconnect", "error", err)
 			}()
 
-			// Create SSH client configuration
-			config, err := s.createSSHClientConfig()
+			// Generate in-memory keys for this connection
+			keyMaterial, err := s.km.CreateInMemoryKeys(ctx)
+			if err != nil {
+				level.Error(connectionLogger).Log("msg", "failed to create in-memory keys", "error", err)
+				return err
+			}
+
+			// Create SSH client configuration from in-memory keys
+			config, err := s.createSSHClientConfig(keyMaterial)
 			if err != nil {
 				level.Error(connectionLogger).Log("msg", "failed to create SSH client config", "error", err)
 				return err
@@ -312,50 +324,23 @@ func (s *Client) runGoSSHClient(ctx context.Context) {
 	}
 }
 
-func (s *Client) createSSHClientConfig() (*ssh.ClientConfig, error) {
-	// Read private key
-	privateKeyBytes, err := os.ReadFile(s.cfg.KeyFile)
+func (s *Client) createSSHClientConfig(keyMaterial *InMemoryKeyMaterial) (*ssh.ClientConfig, error) {
+	// Create signer from in-memory private key
+	signer, err := ssh.NewSignerFromKey(keyMaterial.PrivateKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read private key: %w", err)
+		return nil, fmt.Errorf("failed to create signer from private key: %w", err)
 	}
 
-	signer, err := ssh.ParsePrivateKey(privateKeyBytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse private key: %w", err)
-	}
-
-	// Read certificate
-	certPath := s.cfg.KeyFile + "-cert.pub"
-	certBytes, err := os.ReadFile(certPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read certificate: %w", err)
-	}
-
-	pubkey, _, _, _, err := ssh.ParseAuthorizedKey(certBytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse certificate: %w", err)
-	}
-
-	cert, ok := pubkey.(*ssh.Certificate)
-	if !ok {
-		return nil, fmt.Errorf("parsed key is not a certificate")
-	}
-
-	certSigner, err := ssh.NewCertSigner(cert, signer)
+	// Create certificate signer
+	certSigner, err := ssh.NewCertSigner(keyMaterial.Certificate, signer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create certificate signer: %w", err)
 	}
 
-	// Read and parse known hosts for certificate authority verification
-	knownHostsPath := path.Join(s.cfg.KeyFileDir(), KnownHostsFile)
-	knownHostsBytes, err := os.ReadFile(knownHostsPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read known hosts file: %w", err)
-	}
-
 	// Parse the CA public keys from known_hosts
-	// The known_hosts file contains @cert-authority entries for PDC
+	// The known_hosts data contains @cert-authority entries for PDC
 	var authorizedKeys []ssh.PublicKey
+	knownHostsBytes := keyMaterial.KnownHosts
 	for len(knownHostsBytes) > 0 {
 		_, _, pubKey, _, rest, err := ssh.ParseKnownHosts(knownHostsBytes)
 		if err != nil {
@@ -366,7 +351,7 @@ func (s *Client) createSSHClientConfig() (*ssh.ClientConfig, error) {
 	}
 
 	if len(authorizedKeys) == 0 {
-		return nil, fmt.Errorf("no certificate authorities found in known hosts file")
+		return nil, fmt.Errorf("no certificate authorities found in known hosts data")
 	}
 
 	// Create a CertChecker that verifies the server's host certificate is signed by one of our CAs

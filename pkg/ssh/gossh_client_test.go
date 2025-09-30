@@ -84,3 +84,61 @@ func TestGoSSHClient_ConnectionRetry(t *testing.T) {
 		_ = client.AwaitTerminated(ctx)
 	})
 }
+
+// TestGoSSHClient_InMemoryKeys tests in-memory key generation
+func TestGoSSHClient_InMemoryKeys(t *testing.T) {
+	t.Run("creates in-memory keys without files", func(t *testing.T) {
+		cfg := ssh.DefaultConfig()
+		cfg.PDC = pdc.Config{
+			HostedGrafanaID: "test-stack-123",
+		}
+		cfg.UseGoSSHClient = true
+
+		dir := t.TempDir()
+		cfg.KeyFile = path.Join(dir, "test_key")
+
+		logger := log.NewNopLogger()
+		mClient := mockPDCClient{}
+		km := ssh.NewKeyManager(cfg, logger, mClient)
+
+		// Create in-memory keys
+		keyMaterial, err := km.CreateInMemoryKeys(context.Background())
+		require.NoError(t, err)
+		require.NotNil(t, keyMaterial)
+		require.NotNil(t, keyMaterial.PrivateKey)
+		require.NotNil(t, keyMaterial.PublicKey)
+		require.NotNil(t, keyMaterial.Certificate)
+		require.NotNil(t, keyMaterial.KnownHosts)
+
+		// Verify no files were created (unless debug flag is set)
+		require.NoFileExists(t, cfg.KeyFile)
+		require.NoFileExists(t, cfg.KeyFile+".pub")
+		require.NoFileExists(t, cfg.KeyFile+"-cert.pub")
+	})
+
+	t.Run("optionally writes keys to disk with debug flag", func(t *testing.T) {
+		cfg := ssh.DefaultConfig()
+		cfg.PDC = pdc.Config{
+			HostedGrafanaID: "test-stack-123",
+		}
+		cfg.UseGoSSHClient = true
+		cfg.WriteKeysForDebug = true
+
+		dir := t.TempDir()
+		cfg.KeyFile = path.Join(dir, "test_key")
+
+		logger := log.NewNopLogger()
+		mClient := mockPDCClient{}
+		km := ssh.NewKeyManager(cfg, logger, mClient)
+
+		// Create in-memory keys with debug write
+		keyMaterial, err := km.CreateInMemoryKeys(context.Background())
+		require.NoError(t, err)
+		require.NotNil(t, keyMaterial)
+
+		// Verify files were created for debugging
+		require.FileExists(t, cfg.KeyFile)
+		require.FileExists(t, cfg.KeyFile+".pub")
+		require.FileExists(t, cfg.KeyFile+"-cert.pub")
+	})
+}
