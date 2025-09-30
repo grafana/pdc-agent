@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	stdlog "log"
 	"net"
 	"net/url"
 	"os"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	socks5 "github.com/things-go/go-socks5"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/grafana/dskit/services"
@@ -35,6 +37,25 @@ const (
 	// String returned from PDC when the PDC agent successfully connects
 	SuccessfulConnectionResponse = "This is Grafana Private Datasource Connect!"
 )
+
+// RemoteForwardRequest is the payload for tcpip-forward requests
+type RemoteForwardRequest struct {
+	BindAddr string
+	BindPort uint32
+}
+
+// RemoteForwardSuccess is the response from a successful tcpip-forward request
+type RemoteForwardSuccess struct {
+	BindPort uint32
+}
+
+// RemoteForwardChannelData is the extra data sent with forwarded-tcpip channel requests
+type RemoteForwardChannelData struct {
+	DestAddr   string
+	DestPort   uint32
+	OriginAddr string
+	OriginPort uint32
+}
 
 // Config represents all configurable properties of the ssh package.
 type Config struct {
@@ -214,7 +235,12 @@ func (s *Client) runGoSSHClient(ctx context.Context) {
 			}
 
 			// Build connection address
-			addr := s.cfg.URL.String() + ":22"
+			// If URL has no scheme, URL.Host is empty and the hostname is in URL.Path
+			hostname := s.cfg.URL.Host
+			if hostname == "" {
+				hostname = s.cfg.URL.String()
+			}
+			addr := hostname + ":" + strconv.Itoa(s.cfg.DevPort)
 			level.Debug(connectionLogger).Log("msg", "dialing SSH server", "addr", addr)
 			conn, err := ssh.Dial("tcp", addr, config)
 			if err != nil {
@@ -229,34 +255,43 @@ func (s *Client) runGoSSHClient(ctx context.Context) {
 			level.Info(connectionLogger).Log("msg", "SSH connection established")
 
 			// Send tcpip-forward request (equivalent to -R 0)
-			tcpAddr := &net.TCPAddr{IP: []byte{}, Port: 0}
-			fmt.Printf("======>%s ===== %s\n", tcpAddr, tcpAddr.IP.String())
-			listener, err := conn.ListenTCP(tcpAddr)
-			if err != nil {
-				level.Error(connectionLogger).Log("msg", "failed to setup reverse port forwarding", "error", err)
+			// This tells the server we want to accept forwarded-tcpip channels
+			ok, response, err := conn.SendRequest("tcpip-forward", true, ssh.Marshal(&RemoteForwardRequest{
+				BindAddr: "",
+				BindPort: 0,
+			}))
+			if err != nil || !ok {
+				level.Error(connectionLogger).Log("msg", "failed to setup reverse port forwarding", "error", err, "ok", ok)
+				return fmt.Errorf("tcpip-forward request failed: %w", err)
+			}
+
+			var fwdSuccess RemoteForwardSuccess
+			if err := ssh.Unmarshal(response, &fwdSuccess); err != nil {
+				level.Error(connectionLogger).Log("msg", "failed to parse tcpip-forward response", "error", err)
 				return err
 			}
-			defer listener.Close()
 
-			level.Info(connectionLogger).Log("msg", "reverse port forwarding established", "addr", listener.Addr().String())
+			level.Info(connectionLogger).Log("msg", "reverse port forwarding established", "port", fwdSuccess.BindPort)
 			s.metrics.timeToConnect.WithLabelValues(fmt.Sprintf("%d", connectionID)).Observe(time.Since(startTime).Seconds())
 
-			// Handle forwarding requests
+			// Handle incoming forwarded-tcpip channel requests from the server
+			channels := conn.HandleChannelOpen("forwarded-tcpip")
+			if channels == nil {
+				level.Error(connectionLogger).Log("msg", "failed to get channel handler")
+				return fmt.Errorf("HandleChannelOpen returned nil")
+			}
+
 			for {
 				select {
 				case <-ctx.Done():
 					return nil
-				default:
-					netConn, err := listener.Accept()
-					if err != nil {
-						if ctx.Err() != nil {
-							return nil // context was canceled
-						}
-						level.Error(connectionLogger).Log("msg", "failed to accept connection", "error", err)
-						continue
+				case newChannel, ok := <-channels:
+					if !ok {
+						level.Info(connectionLogger).Log("msg", "channel closed")
+						return nil
 					}
 
-					go s.handleForwardedConnection(netConn, connectionLogger)
+					go s.handleChannelOpen(newChannel, connectionLogger)
 				}
 			}
 		})
@@ -297,23 +332,42 @@ func (s *Client) createSSHClientConfig() (*ssh.ClientConfig, error) {
 		return nil, fmt.Errorf("failed to create certificate signer: %w", err)
 	}
 
-	// Read known hosts
+	// Read and parse known hosts for certificate authority verification
 	knownHostsPath := path.Join(s.cfg.KeyFileDir(), KnownHostsFile)
 	knownHostsBytes, err := os.ReadFile(knownHostsPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read known hosts: %w", err)
+		return nil, fmt.Errorf("failed to read known hosts file: %w", err)
 	}
 
-	// Parse known hosts - we need to create a custom callback since ssh.ParseKnownHosts doesn't return a callback
-	hostKeyCallback := func(hostname string, remote net.Addr, key ssh.PublicKey) error {
-		_, _, _, _, _, err := ssh.ParseKnownHosts(knownHostsBytes)
+	// Parse the CA public keys from known_hosts
+	// The known_hosts file contains @cert-authority entries for PDC
+	var authorizedKeys []ssh.PublicKey
+	for len(knownHostsBytes) > 0 {
+		_, _, pubKey, _, rest, err := ssh.ParseKnownHosts(knownHostsBytes)
 		if err != nil {
-			return fmt.Errorf("failed to parse known hosts: %w", err)
+			break
 		}
-		// For simplicity, accept all host keys that are in the known hosts file
-		// In production, proper host key verification should be implemented
-		return nil
+		authorizedKeys = append(authorizedKeys, pubKey)
+		knownHostsBytes = rest
 	}
+
+	if len(authorizedKeys) == 0 {
+		return nil, fmt.Errorf("no certificate authorities found in known hosts file")
+	}
+
+	// Create a CertChecker that verifies the server's host certificate is signed by one of our CAs
+	certChecker := &ssh.CertChecker{
+		IsHostAuthority: func(remote ssh.PublicKey, addr string) bool {
+			for _, ca := range authorizedKeys {
+				if bytes.Equal(ca.Marshal(), remote.Marshal()) {
+					return true
+				}
+			}
+			return false
+		},
+	}
+
+	hostKeyCallback := certChecker.CheckHostKey
 
 	user := fmt.Sprintf("%s", s.cfg.PDC.HostedGrafanaID)
 
@@ -327,11 +381,86 @@ func (s *Client) createSSHClientConfig() (*ssh.ClientConfig, error) {
 	return config, nil
 }
 
-func (s *Client) handleForwardedConnection(conn net.Conn, logger log.Logger) {
-	defer conn.Close()
-	level.Debug(logger).Log("msg", "handling forwarded connection", "remote", conn.RemoteAddr())
-	// For now, just close the connection as we're mimicking the basic forwarding behavior
-	// In a full implementation, this would handle the actual forwarding logic
+func (s *Client) handleChannelOpen(newChannel ssh.NewChannel, logger log.Logger) {
+	// Parse the channel extra data to get destination info
+	var channelData RemoteForwardChannelData
+	if err := ssh.Unmarshal(newChannel.ExtraData(), &channelData); err != nil {
+		level.Error(logger).Log("msg", "failed to parse channel extra data", "error", err)
+		_ = newChannel.Reject(ssh.UnknownChannelType, "failed to parse channel data")
+		return
+	}
+
+	level.Debug(logger).Log(
+		"msg", "accepting forwarded-tcpip channel",
+		"dest", fmt.Sprintf("%s:%d", channelData.DestAddr, channelData.DestPort),
+		"origin", fmt.Sprintf("%s:%d", channelData.OriginAddr, channelData.OriginPort),
+	)
+
+	// Accept the channel
+	channel, requests, err := newChannel.Accept()
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to accept channel", "error", err)
+		return
+	}
+	defer channel.Close()
+
+	// Discard out-of-band requests
+	go ssh.DiscardRequests(requests)
+
+	// Handle the connection
+	s.handleForwardedConnection(channel, logger)
+}
+
+func (s *Client) handleForwardedConnection(channel ssh.Channel, logger log.Logger) {
+	defer channel.Close()
+
+	level.Debug(logger).Log("msg", "handling forwarded connection")
+
+	// The channel carries SOCKS5 protocol data from the gateway.
+	// We need to act as a SOCKS5 server: read the request, dial the target, and proxy data.
+
+	// Wrap our channel as a net.Conn
+	channelConn := &channelNetConn{Channel: channel}
+
+	// Create a SOCKS5 server to handle this single connection
+	// The server will read the SOCKS5 request, dial the destination, and proxy data
+	stdLogger := stdlog.New(log.NewStdlibAdapter(logger), "", 0)
+	server := socks5.NewServer(
+		socks5.WithLogger(socks5.NewLogger(stdLogger)),
+	)
+
+	// ServeConn handles a single SOCKS5 connection
+	if err := server.ServeConn(channelConn); err != nil {
+		level.Debug(logger).Log("msg", "SOCKS5 connection ended", "error", err)
+	}
+}
+
+// channelNetConn wraps an ssh.Channel to implement net.Conn interface
+type channelNetConn struct {
+	ssh.Channel
+}
+
+func (c *channelNetConn) LocalAddr() net.Addr {
+	return &net.TCPAddr{IP: net.IPv4zero, Port: 0}
+}
+
+func (c *channelNetConn) RemoteAddr() net.Addr {
+	return &net.TCPAddr{IP: net.IPv4zero, Port: 0}
+}
+
+func (c *channelNetConn) SetDeadline(t time.Time) error {
+	// SSH channels don't support deadlines
+	return nil
+}
+
+func (c *channelNetConn) SetReadDeadline(t time.Time) error {
+	// SSH channels don't support deadlines
+	return nil
+}
+
+func (c *channelNetConn) SetWriteDeadline(t time.Time) error {
+	// SSH channels don't support deadlines
+	return nil
 }
 
 func (s *Client) runOpenSSHClient(ctx context.Context, flags []string) {
