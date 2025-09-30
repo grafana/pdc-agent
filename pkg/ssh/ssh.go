@@ -240,7 +240,7 @@ func (s *Client) runGoSSHClient(ctx context.Context) {
 			if hostname == "" {
 				hostname = s.cfg.URL.String()
 			}
-			addr := hostname + ":" + strconv.Itoa(s.cfg.DevPort)
+			addr := hostname + ":" + strconv.Itoa(s.cfg.Port)
 			level.Debug(connectionLogger).Log("msg", "dialing SSH server", "addr", addr)
 			conn, err := ssh.Dial("tcp", addr, config)
 			if err != nil {
@@ -424,9 +424,14 @@ func (s *Client) handleForwardedConnection(channel ssh.Channel, logger log.Logge
 
 	// Create a SOCKS5 server to handle this single connection
 	// The server will read the SOCKS5 request, dial the destination, and proxy data
+	//
+	// TODO I think we can write an adapter here instead of using std logger
 	stdLogger := stdlog.New(log.NewStdlibAdapter(logger), "", 0)
 	server := socks5.NewServer(
 		socks5.WithLogger(socks5.NewLogger(stdLogger)),
+		// TODO only allow CONNECT actions here
+		// TODO add middleware or handler to add some telemetry
+		// TODO (stretch) extract trace info from metadata fields?
 	)
 
 	// ServeConn handles a single SOCKS5 connection
