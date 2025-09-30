@@ -49,12 +49,18 @@ type RemoteForwardSuccess struct {
 	BindPort uint32
 }
 
-// RemoteForwardChannelData is the extra data sent with forwarded-tcpip channel requests
+// RemoteForwardChannelData is the extra data sent with forwarded-tcpip channel requests.
+// This struct can be extended to include custom metadata when both client and server
+// are under our control (e.g., trace context, agent identity, etc.)
 type RemoteForwardChannelData struct {
 	DestAddr   string
 	DestPort   uint32
 	OriginAddr string
 	OriginPort uint32
+	// Future fields for custom protocol extensions:
+	// TraceParent string // W3C traceparent for distributed tracing
+	// AgentID     string // Unique agent identity
+	// Priority    uint8  // Request priority for QoS
 }
 
 // Config represents all configurable properties of the ssh package.
@@ -382,7 +388,7 @@ func (s *Client) createSSHClientConfig() (*ssh.ClientConfig, error) {
 }
 
 func (s *Client) handleChannelOpen(newChannel ssh.NewChannel, logger log.Logger) {
-	// Parse the channel extra data to get destination info
+	// Parse the channel extra data to get destination info and metadata
 	var channelData RemoteForwardChannelData
 	if err := ssh.Unmarshal(newChannel.ExtraData(), &channelData); err != nil {
 		level.Error(logger).Log("msg", "failed to parse channel extra data", "error", err)
@@ -390,7 +396,21 @@ func (s *Client) handleChannelOpen(newChannel ssh.NewChannel, logger log.Logger)
 		return
 	}
 
-	level.Debug(logger).Log(
+	// Enrich logger with any metadata from the channel
+	enrichedLogger := logger
+	// TODO: When PDC gateway sends trace context in channelData.TraceParent:
+	// if channelData.TraceParent != "" {
+	//     traceID, spanID := parseTraceContext(channelData.TraceParent)
+	//     if traceID != "" {
+	//         enrichedLogger = log.With(logger, "traceID", traceID, "spanID", spanID)
+	//     }
+	// }
+	// TODO: When PDC gateway sends agent identity in channelData.AgentID:
+	// if channelData.AgentID != "" {
+	//     enrichedLogger = log.With(enrichedLogger, "agentID", channelData.AgentID)
+	// }
+
+	level.Debug(enrichedLogger).Log(
 		"msg", "accepting forwarded-tcpip channel",
 		"dest", fmt.Sprintf("%s:%d", channelData.DestAddr, channelData.DestPort),
 		"origin", fmt.Sprintf("%s:%d", channelData.OriginAddr, channelData.OriginPort),
@@ -399,7 +419,7 @@ func (s *Client) handleChannelOpen(newChannel ssh.NewChannel, logger log.Logger)
 	// Accept the channel
 	channel, requests, err := newChannel.Accept()
 	if err != nil {
-		level.Error(logger).Log("msg", "failed to accept channel", "error", err)
+		level.Error(enrichedLogger).Log("msg", "failed to accept channel", "error", err)
 		return
 	}
 	defer channel.Close()
@@ -407,8 +427,8 @@ func (s *Client) handleChannelOpen(newChannel ssh.NewChannel, logger log.Logger)
 	// Discard out-of-band requests
 	go ssh.DiscardRequests(requests)
 
-	// Handle the connection
-	s.handleForwardedConnection(channel, logger)
+	// Handle the connection with enriched logger
+	s.handleForwardedConnection(channel, enrichedLogger)
 }
 
 func (s *Client) handleForwardedConnection(channel ssh.Channel, logger log.Logger) {
@@ -428,7 +448,6 @@ func (s *Client) handleForwardedConnection(channel ssh.Channel, logger log.Logge
 		socks5.WithLogger(&socks5LoggerAdapter{logger: logger}),
 		socks5.WithRule(&connectOnlyRule{}),
 		// TODO add middleware or handler to add some telemetry
-		// TODO (stretch) extract trace info from metadata fields?
 	)
 
 	// ServeConn handles a single SOCKS5 connection
