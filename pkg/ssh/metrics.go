@@ -23,6 +23,12 @@ type promMetrics struct {
 	tcpConnectionsCount *prometheus.CounterVec // connections to the target host
 	timeToConnect       *prometheus.HistogramVec
 	openChannelsCount   *prometheus.GaugeVec
+
+	// SOCKS5 metrics (for Go SSH client only)
+	socks5ConnectionsActive   prometheus.Gauge       // current active SOCKS5 connections
+	socks5ConnectionsTotal    prometheus.Counter     // total SOCKS5 connections handled
+	socks5ConnectionDuration  prometheus.Histogram   // SOCKS5 connection duration
+	socks5ConnectionsByStatus *prometheus.CounterVec // SOCKS5 connections by status (success/error)
 }
 
 func newPromMetrics() *promMetrics {
@@ -65,6 +71,36 @@ func newPromMetrics() *promMetrics {
 				Namespace: "pdc_agent",
 			},
 			[]string{"connection"},
+		),
+		socks5ConnectionsActive: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Name:      "socks5_connections_active",
+				Help:      "Number of currently active SOCKS5 connections",
+				Namespace: "pdc_agent",
+			},
+		),
+		socks5ConnectionsTotal: prometheus.NewCounter(
+			prometheus.CounterOpts{
+				Name:      "socks5_connections_total",
+				Help:      "Total number of SOCKS5 connections handled",
+				Namespace: "pdc_agent",
+			},
+		),
+		socks5ConnectionDuration: prometheus.NewHistogram(
+			prometheus.HistogramOpts{
+				Name:      "socks5_connection_duration_seconds",
+				Help:      "Duration of SOCKS5 connections",
+				Namespace: "pdc_agent",
+				Buckets:   prometheus.DefBuckets,
+			},
+		),
+		socks5ConnectionsByStatus: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name:      "socks5_connections_by_status_total",
+				Help:      "Total SOCKS5 connections by status",
+				Namespace: "pdc_agent",
+			},
+			[]string{"status"},
 		),
 	}
 }

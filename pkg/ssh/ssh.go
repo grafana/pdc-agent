@@ -173,6 +173,10 @@ func (s *Client) Collect(ch chan<- prometheus.Metric) {
 	s.metrics.tcpConnectionsCount.Collect(ch)
 	s.metrics.timeToConnect.Collect(ch)
 	s.metrics.sshConnectionsCount.Collect(ch)
+	s.metrics.socks5ConnectionsActive.Collect(ch)
+	s.metrics.socks5ConnectionsTotal.Collect(ch)
+	s.metrics.socks5ConnectionDuration.Collect(ch)
+	s.metrics.socks5ConnectionsByStatus.Collect(ch)
 }
 
 func (s *Client) Describe(ch chan<- *prometheus.Desc) {
@@ -181,6 +185,10 @@ func (s *Client) Describe(ch chan<- *prometheus.Desc) {
 	s.metrics.tcpConnectionsCount.Describe(ch)
 	s.metrics.timeToConnect.Describe(ch)
 	s.metrics.sshConnectionsCount.Describe(ch)
+	s.metrics.socks5ConnectionsActive.Describe(ch)
+	s.metrics.socks5ConnectionsTotal.Describe(ch)
+	s.metrics.socks5ConnectionDuration.Describe(ch)
+	s.metrics.socks5ConnectionsByStatus.Describe(ch)
 }
 
 func (s *Client) starting(ctx context.Context) error {
@@ -436,6 +444,15 @@ func (s *Client) handleForwardedConnection(channel ssh.Channel, logger log.Logge
 
 	level.Debug(logger).Log("msg", "handling forwarded connection")
 
+	// Track SOCKS5 connection metrics
+	start := time.Now()
+	s.metrics.socks5ConnectionsActive.Inc()
+	s.metrics.socks5ConnectionsTotal.Inc()
+	defer func() {
+		s.metrics.socks5ConnectionsActive.Dec()
+		s.metrics.socks5ConnectionDuration.Observe(time.Since(start).Seconds())
+	}()
+
 	// The channel carries SOCKS5 protocol data from the gateway.
 	// We need to act as a SOCKS5 server: read the request, dial the target, and proxy data.
 
@@ -447,12 +464,14 @@ func (s *Client) handleForwardedConnection(channel ssh.Channel, logger log.Logge
 	server := socks5.NewServer(
 		socks5.WithLogger(&socks5LoggerAdapter{logger: logger}),
 		socks5.WithRule(&connectOnlyRule{}),
-		// TODO add middleware or handler to add some telemetry
 	)
 
 	// ServeConn handles a single SOCKS5 connection
 	if err := server.ServeConn(channelConn); err != nil {
 		level.Debug(logger).Log("msg", "SOCKS5 connection ended", "error", err)
+		s.metrics.socks5ConnectionsByStatus.WithLabelValues("error").Inc()
+	} else {
+		s.metrics.socks5ConnectionsByStatus.WithLabelValues("success").Inc()
 	}
 }
 
