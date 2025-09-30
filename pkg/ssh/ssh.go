@@ -21,6 +21,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	socks5 "github.com/things-go/go-socks5"
+	"github.com/things-go/go-socks5/statute"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/grafana/dskit/services"
@@ -429,7 +430,7 @@ func (s *Client) handleForwardedConnection(channel ssh.Channel, logger log.Logge
 	stdLogger := stdlog.New(log.NewStdlibAdapter(logger), "", 0)
 	server := socks5.NewServer(
 		socks5.WithLogger(socks5.NewLogger(stdLogger)),
-		// TODO only allow CONNECT actions here
+		socks5.WithRule(&connectOnlyRule{}),
 		// TODO add middleware or handler to add some telemetry
 		// TODO (stretch) extract trace info from metadata fields?
 	)
@@ -438,6 +439,14 @@ func (s *Client) handleForwardedConnection(channel ssh.Channel, logger log.Logge
 	if err := server.ServeConn(channelConn); err != nil {
 		level.Debug(logger).Log("msg", "SOCKS5 connection ended", "error", err)
 	}
+}
+
+// connectOnlyRule is a RuleSet that only allows CONNECT commands.
+// BIND and ASSOCIATE commands are rejected.
+type connectOnlyRule struct{}
+
+func (r *connectOnlyRule) Allow(ctx context.Context, req *socks5.Request) (context.Context, bool) {
+	return ctx, req.Command == statute.CommandConnect
 }
 
 // channelNetConn wraps an ssh.Channel to implement net.Conn interface
