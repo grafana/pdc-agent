@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
@@ -14,10 +15,14 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	socks5 "github.com/things-go/go-socks5"
+	"golang.org/x/crypto/ssh"
 
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/pdc-agent/pkg/pdc"
@@ -33,6 +38,31 @@ const (
 	// String returned from PDC when the PDC agent successfully connects
 	SuccessfulConnectionResponse = "This is Grafana Private Datasource Connect!"
 )
+
+// RemoteForwardRequest is the payload for tcpip-forward requests
+type RemoteForwardRequest struct {
+	BindAddr string
+	BindPort uint32
+}
+
+// RemoteForwardSuccess is the response from a successful tcpip-forward request
+type RemoteForwardSuccess struct {
+	BindPort uint32
+}
+
+// RemoteForwardChannelData is the extra data sent with forwarded-tcpip channel requests.
+// This struct can be extended to include custom metadata when both client and server
+// are under our control (e.g., trace context, agent identity, etc.)
+type RemoteForwardChannelData struct {
+	DestAddr   string
+	DestPort   uint32
+	OriginAddr string
+	OriginPort uint32
+	// Future fields for custom protocol extensions:
+	// TraceParent string // W3C traceparent for distributed tracing
+	// AgentID     string // Unique agent identity
+	// Priority    uint8  // Request priority for QoS
+}
 
 // Config represents all configurable properties of the ssh package.
 type Config struct {
@@ -53,6 +83,8 @@ type Config struct {
 	// is valid and regenerate it if necessary.
 	CertCheckCertExpiryPeriod time.Duration
 	URL                       *url.URL
+	GracefulShutdownTimeout   time.Duration
+	EnablePhoneHomeTelemetry  bool
 
 	// MetricsAddr is the port to expose metrics on
 	MetricsAddr  string
@@ -64,6 +96,13 @@ type Config struct {
 	// Used for local development.
 	// DevPort is the port number for the PDC gateway
 	DevPort int
+
+	// When enabled, use a go implementation of the SSH client, instead of OpenSSH.
+	UseGoSSHClient bool
+
+	// WriteKeysForDebug optionally writes in-memory keys to disk for debugging.
+	// Only used when UseGoSSHClient is true.
+	WriteKeysForDebug bool
 }
 
 // DefaultConfig returns a Config with some sensible defaults set
@@ -95,6 +134,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.MetricsAddr, "metrics-addr", ":8090", "HTTP server address to expose metrics on")
 	f.BoolVar(&cfg.ParseMetrics, "parse-metrics", true, "Enabled or disable parsing of metrics from the ssh logs")
 	f.IntVar(&cfg.Connections, "connections", 1, "The number of parallel ssh connections to open. Adding more connections will increase total bandwidth to your network. The limit is 50 connections across all your agents")
+	f.BoolVar(&cfg.UseGoSSHClient, "use-go-client", false, "Use the Go SSH client instead of the OpenSSH client")
+	f.BoolVar(&cfg.WriteKeysForDebug, "write-keys-for-debug", false, "Write in-memory keys to disk for debugging (only used with --use-go-client)")
+	f.DurationVar(&cfg.GracefulShutdownTimeout, "shutdown-timeout", 1*time.Second, "How long the agent will wait for existing data source connections to close before forcefully shutting down")
+	f.BoolVar(&cfg.EnablePhoneHomeTelemetry, "enable-phone-home-telemetry", true, "Enable phone home telemetry")
 
 	f.IntVar(&cfg.DevPort, "dev-ssh-port", 2244, "[DEVELOPMENT ONLY] The port to use for agent connections to the PDC SSH gateway")
 
@@ -118,6 +161,13 @@ type Client struct {
 	logger  log.Logger
 	km      *KeyManager
 	metrics *promMetrics
+
+	socksServerMu sync.Mutex
+	socksServers  map[int]*socks5.Server
+	// socks5Server  *socks5.Server // Reused SOCKS5 server for all connections
+	//
+	connMux sync.Mutex
+	conns   map[int]ssh.Conn
 }
 
 // NewClient returns a new SSH client in an idle state
@@ -130,6 +180,12 @@ func NewClient(cfg *Config, logger log.Logger, km *KeyManager) *Client {
 		metrics: newPromMetrics(),
 	}
 
+	// Only create SOCKS5 server if using Go SSH client
+	if cfg.UseGoSSHClient {
+		client.socksServers = make(map[int]*socks5.Server)
+		client.conns = make(map[int]ssh.Conn)
+	}
+
 	client.BasicService = services.NewIdleService(client.starting, client.stopping)
 	return client
 }
@@ -140,6 +196,7 @@ func (s *Client) Collect(ch chan<- prometheus.Metric) {
 	s.metrics.tcpConnectionsCount.Collect(ch)
 	s.metrics.timeToConnect.Collect(ch)
 	s.metrics.sshConnectionsCount.Collect(ch)
+	s.metrics.tcpConnectionDuration.Collect(ch)
 }
 
 func (s *Client) Describe(ch chan<- *prometheus.Desc) {
@@ -148,6 +205,7 @@ func (s *Client) Describe(ch chan<- *prometheus.Desc) {
 	s.metrics.tcpConnectionsCount.Describe(ch)
 	s.metrics.timeToConnect.Describe(ch)
 	s.metrics.sshConnectionsCount.Describe(ch)
+	s.metrics.tcpConnectionDuration.Describe(ch)
 }
 
 func (s *Client) starting(ctx context.Context) error {
@@ -178,6 +236,453 @@ func (s *Client) starting(ctx context.Context) error {
 	}
 	level.Debug(s.logger).Log("msg", fmt.Sprintf("parsed flags: %s", flags))
 
+	if s.cfg.UseGoSSHClient {
+		s.runGoSSHClient(ctx)
+	} else {
+		s.runOpenSSHClient(ctx, flags)
+	}
+
+	return nil
+}
+
+func (s *Client) runGoSSHClient(ctx context.Context) {
+	retryOpts := retry.Opts{MaxBackoff: 16 * time.Second, InitialBackoff: 1 * time.Second}
+
+	for c := 0; c < s.cfg.Connections; c++ {
+		connectionID := c + 1
+		go func(connID int) {
+
+			// Cache key material outside the retry loop to reuse across retries
+			var keyMaterial *InMemoryKeyMaterial
+
+			retry.Forever(retryOpts, func() error {
+				return s.runSingleConnection(ctx, connID, &keyMaterial)
+			})
+		}(connectionID)
+	}
+}
+
+// runSingleConnection handles a single SSH connection attempt
+func (s *Client) runSingleConnection(ctx context.Context, connID int, keyMaterial **InMemoryKeyMaterial) error {
+	startTime := time.Now()
+	connectionLogger := log.With(s.logger, "connection", connID)
+
+	// Define a default error to return if the connection fails. We may replace it
+	// with a resetBackoffError if the connection succeeds before failing.
+	err := errors.New("")
+
+	defer func() {
+		level.Info(connectionLogger).Log("msg", "connection finished, will try to reconnect", "error", err)
+	}()
+
+	// Get or refresh key material
+	*keyMaterial, err = s.getOrRefreshKeyMaterial(ctx, *keyMaterial, connectionLogger)
+	if err != nil {
+		level.Error(connectionLogger).Log("msg", "failed to get key material", "error", err)
+		return err
+	}
+
+	// Establish SSH connection with reverse port forwarding
+	conn, port, err := s.establishSSHConnection(ctx, *keyMaterial, connectionLogger, connID)
+	if err != nil {
+		level.Error(connectionLogger).Log("msg", "failed to establish connection", "error", err)
+		return err
+	}
+	defer conn.Close()
+
+	s.metrics.sshConnectionsCount.Inc()
+	defer s.metrics.sshConnectionsCount.Dec()
+
+	s.metrics.timeToConnect.WithLabelValues(fmt.Sprintf("%d", connID)).Observe(time.Since(startTime).Seconds())
+
+	// Connection established successfully - reset backoff on next retry
+	err = retry.ResetBackoffError{}
+
+	logger := log.With(s.logger, "connection", connID)
+
+	// TODO tidy up serbers on close?
+
+	// Start SSH keepalive goroutine (equivalent to ServerAliveInterval=15)
+	keepaliveCtx, keepaliveCancel := context.WithCancel(ctx)
+	defer keepaliveCancel()
+	go s.runKeepalive(keepaliveCtx, conn, connectionLogger)
+
+	// Handle incoming forwarded-tcpip channel requests from the server
+	channels := conn.HandleChannelOpen("forwarded-tcpip")
+	if channels == nil {
+		level.Error(connectionLogger).Log("msg", "failed to get channel handler")
+		return fmt.Errorf("HandleChannelOpen returned nil")
+	}
+
+	level.Debug(connectionLogger).Log("msg", "port forwarding established", "port", port)
+
+	pdcListener := NewListenerFromChannel(conn, channels)
+
+	srv := socks5.NewServer(
+		socks5.WithLogger(&socks5LoggerAdapter{logger: logger}),
+		socks5.WithRule(&socks5.PermitCommand{
+			EnableConnect: true,
+		}),
+		socks5.WithDialAndRequest(s.socksDialerProvider(logger, connID, conn)),
+	)
+
+	// TODO do we need to track these?
+	s.socksServerMu.Lock()
+	s.socksServers[connID] = srv
+	s.socksServerMu.Unlock()
+
+	return srv.Serve(pdcListener)
+	// Handle channel loop - this blocks until connection closes
+	//
+	// TODO look at the gateway here for an example of how we can turn newChannels channel into a listener, then we can use the listener in server.Sere(). It would be nice to be consistent in how we deal with these I think.
+	//return s.handleChannelLoop(ctx, conn, channels, err, connectionLogger, srv)
+}
+
+// NewListenerFromChannel creates a net.Listener that listens listen for new
+// requests on an ssh channel and converts the request to a net.Conn. The connection
+// that received the channel is required for implementing the net.Conn interface.
+func NewListenerFromChannel(parent ssh.Conn, nc <-chan ssh.NewChannel) net.Listener {
+	return &listener{
+		parent: parent,
+		nc:     nc,
+	}
+}
+
+// listener implements net.Listener
+type listener struct {
+	nc     <-chan ssh.NewChannel
+	parent ssh.Conn
+
+	mu         sync.RWMutex
+	chanclosed bool
+}
+
+func (l *listener) ok() bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return !l.chanclosed && l.parent != nil
+}
+
+func (l *listener) Accept() (net.Conn, error) {
+	if !l.ok() {
+		return nil, syscall.EINVAL
+	}
+
+	nc := <-l.nc
+
+	// channel close event. Error here as we don't want to try and do something
+	// with the event
+	if nc == nil {
+		l.mu.Lock()
+		l.chanclosed = true
+		l.mu.Unlock()
+		return nil, errors.New("ssh.NewChannel channel closed")
+	}
+
+	ch, _, err := (nc).Accept()
+	if err != nil {
+		return nil, err
+	}
+
+	// we dont need to force close channels on this conn, as they are related to
+	// proxy <-> gateway conns, not gateway <-> PDC agent.
+	return ToNetConn(l.parent, ch, false), nil
+}
+
+func (l *listener) Addr() net.Addr {
+	return l.parent.LocalAddr()
+}
+
+// Close does nothing - if you want to stop accepting requests, close the parent connection.
+func (l *listener) Close() error {
+	return nil
+}
+
+// ToNetConn converts an ssh connection and associated channel to a net.Conn
+func ToNetConn(parent ssh.Conn, ch ssh.Channel, forceClose bool) net.Conn {
+	return &channel{
+		Channel:    ch,
+		parentConn: parent,
+		forceClose: forceClose,
+	}
+}
+
+// channel implements net.Conn
+type channel struct {
+	ssh.Channel
+	parentConn       ssh.Conn
+	deadline         *time.Timer
+	deadlineCanceled chan struct{}
+	mu               sync.Mutex
+	forceClose       bool
+}
+
+// LocalAddr returns the local network address.
+func (c *channel) LocalAddr() net.Addr {
+	return c.parentConn.LocalAddr()
+}
+
+// RemoteAddr returns the remote network address.
+func (c *channel) RemoteAddr() net.Addr {
+	return c.parentConn.RemoteAddr()
+}
+
+// SetDeadline sets the read and write deadlines associated with the connection.
+func (c *channel) SetDeadline(t time.Time) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// Stop the time if it's already running
+	if c.deadline != nil {
+		c.deadline.Stop()
+		close(c.deadlineCanceled)
+		c.deadline = nil
+	}
+	// If t is zero, we don't want to set a deadline
+	if t.IsZero() {
+		return nil
+	}
+	// Set the deadline
+	c.deadline = time.NewTimer(time.Until(t))
+	c.deadlineCanceled = make(chan struct{})
+	go func(deadline *time.Timer, deadlineCanceled <-chan struct{}) {
+		select {
+		case <-deadline.C:
+			if c.forceClose {
+				// CloseWrite will send a EOF message to the peer instead of channel
+				// close. In the PDC agent, this will force close a client channel,
+				// rather than moving it to idle state. This frees up channels quicker
+				// in the case where channels are waiting a long time for responses to
+				// their TCP dials.
+				_ = c.Channel.CloseWrite()
+			} else {
+				_ = c.Channel.Close()
+			}
+		case <-deadlineCanceled:
+			return
+		}
+	}(c.deadline, c.deadlineCanceled)
+	return nil
+}
+
+// A zero value for t means I/O operations will not time out.
+func (c *channel) SetReadDeadline(_ time.Time) error {
+	return fmt.Errorf("not implemented")
+}
+
+// A zero value for t means I/O operations will not time out.
+func (c *channel) SetWriteDeadline(_ time.Time) error {
+	return fmt.Errorf("not implemented")
+}
+
+// socksDialerProvider returns a function that can be used to dial a SOCKS5 proxy
+//
+// the main purpose of using a custom dialer is so we can get access to the socks request information for telemetry.
+func (s *Client) socksDialerProvider(logger log.Logger, connId int, sshConn ssh.Conn) func(ctx context.Context, network string, addr string, request *socks5.Request) (net.Conn, error) {
+	return func(ctx context.Context, network string, addr string, request *socks5.Request) (net.Conn, error) {
+		level.Debug(logger).Log("msg", "dialing", "addr", addr)
+		startTime := time.Now()
+		conn, err := net.Dial(network, addr)
+
+		if err != nil {
+			s.metrics.tcpConnectionDuration.WithLabelValues(fmt.Sprintf("%d", connId), addr, "error").Observe(time.Since(startTime).Seconds())
+			s.sendConnectionEvent(sshConn, connId, addr, "error")
+			return conn, err
+		}
+
+		s.metrics.tcpConnectionDuration.WithLabelValues(fmt.Sprintf("%d", connId), addr, "success").Observe(time.Since(startTime).Seconds())
+		s.sendConnectionEvent(sshConn, connId, addr, "success")
+
+		return conn, nil
+	}
+}
+
+type connectEvent struct {
+	connID int
+	addr   string
+	status string
+}
+
+func (s *Client) sendConnectionEvent(conn ssh.Conn, connId int, addr string, status string) {
+	level.Debug(s.logger).Log("msg", "maybe sending connection event")
+
+	if !s.cfg.EnablePhoneHomeTelemetry {
+		return
+	}
+
+	level.Debug(s.logger).Log("msg", "sending connection event")
+	_, _, _ = conn.SendRequest("connection-event", false, ssh.Marshal(&connectEvent{
+		connID: connId,
+		addr:   addr,
+		status: status,
+	}))
+}
+
+// getOrRefreshKeyMaterial returns existing key material or generates new keys if needed
+func (s *Client) getOrRefreshKeyMaterial(ctx context.Context, current *InMemoryKeyMaterial, logger log.Logger) (*InMemoryKeyMaterial, error) {
+	// Generate new keys on first attempt or if certificate is about to expire
+	if current == nil || IsCertExpiringSoon(current.Certificate, s.cfg.CertExpiryWindow) {
+		level.Info(logger).Log("msg", "generating or refreshing in-memory keys and certificate")
+		keyMaterial, err := s.km.CreateInMemoryKeys(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create in-memory keys: %w", err)
+		}
+		return keyMaterial, nil
+	}
+	level.Debug(logger).Log("msg", "reusing existing in-memory keys and certificate")
+	return current, nil
+}
+
+// establishSSHConnection creates and establishes an SSH connection with reverse port forwarding
+func (s *Client) establishSSHConnection(ctx context.Context, keyMaterial *InMemoryKeyMaterial, logger log.Logger, connID int) (*ssh.Client, uint32, error) {
+	// Create SSH client configuration from in-memory keys
+	config, err := s.createSSHClientConfig(keyMaterial)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to create SSH client config: %w", err)
+	}
+
+	// Build connection address
+	// If URL has no scheme, URL.Host is empty and the hostname is in URL.Path
+	hostname := s.cfg.URL.Host
+	if hostname == "" {
+		hostname = s.cfg.URL.String()
+	}
+	addr := hostname + ":" + strconv.Itoa(s.cfg.Port)
+	level.Debug(logger).Log("msg", "dialing SSH server", "addr", addr)
+
+	// Use net.DialContext for context-aware cancellation
+	netConn, err := (&net.Dialer{
+		Timeout:   config.Timeout,
+		KeepAlive: -1, // Disable TCP keepalive (equivalent to TCPKeepAlive=no)
+	}).DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to dial SSH server: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			netConn.Close()
+		}
+	}()
+
+	// Establish SSH connection over the net.Conn
+	sshConn, chans, reqs, err := ssh.NewClientConn(netConn, addr, config)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to establish SSH connection: %w", err)
+	}
+
+	s.connMux.Lock()
+	s.conns[connID] = sshConn
+	s.connMux.Unlock()
+
+	conn := ssh.NewClient(sshConn, chans, reqs)
+
+	level.Info(logger).Log("msg", "SSH connection established")
+
+	// Send tcpip-forward request (equivalent to -R 0)
+	ok, response, err := conn.SendRequest("tcpip-forward", true, ssh.Marshal(&RemoteForwardRequest{
+		BindAddr: "",
+		BindPort: 0,
+	}))
+	if err != nil || !ok {
+		conn.Close()
+		return nil, 0, fmt.Errorf("tcpip-forward request failed: %w", err)
+	}
+
+	var fwdSuccess RemoteForwardSuccess
+	if err := ssh.Unmarshal(response, &fwdSuccess); err != nil {
+		conn.Close()
+		return nil, 0, fmt.Errorf("failed to parse tcpip-forward response: %w", err)
+	}
+
+	level.Info(logger).Log("msg", "reverse port forwarding established", "port", fwdSuccess.BindPort)
+	return conn, fwdSuccess.BindPort, nil
+}
+
+// runKeepalive starts a goroutine that sends SSH keepalive requests periodically
+func (s *Client) runKeepalive(ctx context.Context, conn *ssh.Client, logger log.Logger) {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// Send keepalive request with want_reply=true
+			_, _, err := conn.SendRequest("keepalive@openssh.com", true, nil)
+			if err != nil {
+				level.Debug(logger).Log("msg", "keepalive failed", "error", err)
+				// Connection is likely dead, close it to trigger reconnect
+				conn.Close()
+				return
+			}
+			level.Debug(logger).Log("msg", "keepalive sent successfully")
+		}
+	}
+}
+
+func (s *Client) createSSHClientConfig(keyMaterial *InMemoryKeyMaterial) (*ssh.ClientConfig, error) {
+	// Create signer from in-memory private key
+	signer, err := ssh.NewSignerFromKey(keyMaterial.PrivateKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create signer from private key: %w", err)
+	}
+
+	// Create certificate signer
+	certSigner, err := ssh.NewCertSigner(keyMaterial.Certificate, signer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create certificate signer: %w", err)
+	}
+
+	// Parse the CA public keys from known_hosts
+	// The known_hosts data contains @cert-authority entries for PDC
+	var authorizedKeys []ssh.PublicKey
+	knownHostsBytes := keyMaterial.KnownHosts
+	for len(knownHostsBytes) > 0 {
+		_, _, pubKey, _, rest, err := ssh.ParseKnownHosts(knownHostsBytes)
+		if err != nil {
+			break
+		}
+		authorizedKeys = append(authorizedKeys, pubKey)
+		knownHostsBytes = rest
+	}
+
+	if len(authorizedKeys) == 0 {
+		return nil, fmt.Errorf("no certificate authorities found in known hosts data")
+	}
+
+	// Create a CertChecker that verifies the server's host certificate is signed by one of our CAs
+	certChecker := &ssh.CertChecker{
+		IsHostAuthority: func(remote ssh.PublicKey, _ string) bool {
+			for _, ca := range authorizedKeys {
+				if bytes.Equal(ca.Marshal(), remote.Marshal()) {
+					return true
+				}
+			}
+			return false
+		},
+	}
+
+	hostKeyCallback := certChecker.CheckHostKey
+
+	config := &ssh.ClientConfig{
+		User:            s.cfg.PDC.HostedGrafanaID,
+		Auth:            []ssh.AuthMethod{ssh.PublicKeys(certSigner)},
+		HostKeyCallback: hostKeyCallback,
+		Timeout:         1 * time.Second, // ConnectTimeout from SSH flags
+	}
+
+	return config, nil
+}
+
+// socks5LoggerAdapter adapts go-kit logger to socks5.Logger interface
+type socks5LoggerAdapter struct {
+	logger log.Logger
+}
+
+func (a *socks5LoggerAdapter) Errorf(format string, args ...any) {
+	level.Error(a.logger).Log("msg", fmt.Sprintf(format, args...))
+}
+
+func (s *Client) runOpenSSHClient(ctx context.Context, flags []string) {
 	retryOpts := retry.Opts{MaxBackoff: 16 * time.Second, InitialBackoff: 1 * time.Second}
 	for c := 0; c < s.cfg.Connections; c++ {
 		go retry.Forever(retryOpts, func() (err error) {
@@ -251,13 +756,26 @@ func (s *Client) starting(ctx context.Context) error {
 			return err
 		})
 	}
-
-	return nil
 }
 
 func (s *Client) stopping(err error) error {
-	level.Info(s.logger).Log("msg", "stopping ssh client")
-	return err
+	if s.conns == nil {
+		return nil
+	}
+
+	s.connMux.Lock()
+	for _, conn := range s.conns {
+		_, _, _ = conn.SendRequest("cancel-tcpip-forward", false, ssh.Marshal(&RemoteForwardRequest{
+			BindAddr: "",
+			BindPort: 0,
+		}))
+	}
+	s.connMux.Unlock()
+
+	// TODO close as soon as all socks requests are done (or after a timeout)
+	<-time.After(s.cfg.GracefulShutdownTimeout)
+	level.Info(s.logger).Log("msg", "This was Grafana Private Data source Connect!")
+	return nil
 }
 
 // SSHFlagsFromConfig generates the array of flags to pass to the ssh command.
@@ -441,4 +959,49 @@ func RequireSSHVersionAbove9_2(major, minor int) error {
 		return nil
 	}
 	return fmt.Errorf("OpenSSH version must be greater or equal to 9.2, current version: %d.%d", major, minor)
+}
+
+// IsCertExpiringSoon checks if an SSH certificate is expired or about to expire
+func IsCertExpiringSoon(cert *ssh.Certificate, expiryWindow time.Duration) bool {
+	if cert == nil {
+		return true
+	}
+	now := uint64(time.Now().Unix())
+	// Check if expired
+	if now > cert.ValidBefore {
+		return true
+	}
+	// Check if within expiry window
+	if now > (cert.ValidBefore - uint64(expiryWindow.Seconds())) {
+		return true
+	}
+	// Check if not yet valid
+	if now < cert.ValidAfter {
+		return true
+	}
+	return false
+}
+
+// IsConnectionLimitError checks if an error indicates the PDC connection limit was reached
+func IsConnectionLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	// Check for connection limit related messages from PDC server
+	return strings.Contains(errStr, "connection limit") ||
+		strings.Contains(errStr, "limit reached") ||
+		strings.Contains(errStr, "too many connections")
+}
+
+// IsConnectionAlreadyExistsError checks if an error indicates a duplicate connection
+func IsConnectionAlreadyExistsError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	// Check for duplicate connection messages from PDC server
+	return strings.Contains(errStr, "connection already exists") ||
+		strings.Contains(errStr, "duplicate connection") ||
+		strings.Contains(errStr, "already connected")
 }

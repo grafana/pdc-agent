@@ -23,6 +23,9 @@ type promMetrics struct {
 	tcpConnectionsCount *prometheus.CounterVec // connections to the target host
 	timeToConnect       *prometheus.HistogramVec
 	openChannelsCount   *prometheus.GaugeVec
+
+	// SOCKS5 metrics (for Go SSH client only)
+	tcpConnectionDuration *prometheus.HistogramVec // SOCKS5 connection duration
 }
 
 func newPromMetrics() *promMetrics {
@@ -65,6 +68,14 @@ func newPromMetrics() *promMetrics {
 				Namespace: "pdc_agent",
 			},
 			[]string{"connection"},
+		),
+		tcpConnectionDuration: metrics.NewNativeHistogramVec(
+			prometheus.HistogramOpts{
+				Name:      "tcp_dial_duration",
+				Help:      "TCP Dial Duration",
+				Namespace: "pdc_agent",
+			},
+			[]string{"connection", "target", "status"},
 		),
 	}
 }

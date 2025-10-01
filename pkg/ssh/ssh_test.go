@@ -519,3 +519,163 @@ func (m mockPDCClient) SignSSHKey(_ context.Context, _ []byte) (*pdc.SigningResp
 		Certificate: *cert,
 	}, nil
 }
+
+func TestIsCertExpiringSoon(t *testing.T) {
+	tests := []struct {
+		name         string
+		cert         *gossh.Certificate
+		expiryWindow time.Duration
+		expected     bool
+	}{
+		{
+			name:         "nil certificate",
+			cert:         nil,
+			expiryWindow: 5 * time.Minute,
+			expected:     true,
+		},
+		{
+			name: "expired certificate",
+			cert: &gossh.Certificate{
+				ValidBefore: uint64(time.Now().Add(-1 * time.Hour).Unix()),
+				ValidAfter:  uint64(time.Now().Add(-2 * time.Hour).Unix()),
+			},
+			expiryWindow: 5 * time.Minute,
+			expected:     true,
+		},
+		{
+			name: "certificate expires within window",
+			cert: &gossh.Certificate{
+				ValidBefore: uint64(time.Now().Add(3 * time.Minute).Unix()),
+				ValidAfter:  uint64(time.Now().Add(-1 * time.Hour).Unix()),
+			},
+			expiryWindow: 5 * time.Minute,
+			expected:     true,
+		},
+		{
+			name: "certificate not yet valid",
+			cert: &gossh.Certificate{
+				ValidBefore: uint64(time.Now().Add(2 * time.Hour).Unix()),
+				ValidAfter:  uint64(time.Now().Add(1 * time.Hour).Unix()),
+			},
+			expiryWindow: 5 * time.Minute,
+			expected:     true,
+		},
+		{
+			name: "valid certificate",
+			cert: &gossh.Certificate{
+				ValidBefore: uint64(time.Now().Add(1 * time.Hour).Unix()),
+				ValidAfter:  uint64(time.Now().Add(-1 * time.Hour).Unix()),
+			},
+			expiryWindow: 5 * time.Minute,
+			expected:     false,
+		},
+		{
+			name: "certificate expires just outside window",
+			cert: &gossh.Certificate{
+				ValidBefore: uint64(time.Now().Add(6 * time.Minute).Unix()),
+				ValidAfter:  uint64(time.Now().Add(-1 * time.Hour).Unix()),
+			},
+			expiryWindow: 5 * time.Minute,
+			expected:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ssh.IsCertExpiringSoon(tt.cert, tt.expiryWindow)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestIsConnectionLimitError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "nil error",
+			err:      nil,
+			expected: false,
+		},
+		{
+			name:     "connection limit error",
+			err:      fmt.Errorf("connection limit reached"),
+			expected: true,
+		},
+		{
+			name:     "limit reached error",
+			err:      fmt.Errorf("limit reached for this stack"),
+			expected: true,
+		},
+		{
+			name:     "too many connections error",
+			err:      fmt.Errorf("too many connections from this agent"),
+			expected: true,
+		},
+		{
+			name:     "unrelated error",
+			err:      fmt.Errorf("network timeout"),
+			expected: false,
+		},
+		{
+			name:     "empty error message",
+			err:      fmt.Errorf(""),
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ssh.IsConnectionLimitError(tt.err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestIsConnectionAlreadyExistsError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "nil error",
+			err:      nil,
+			expected: false,
+		},
+		{
+			name:     "connection already exists error",
+			err:      fmt.Errorf("connection already exists for this tunnel"),
+			expected: true,
+		},
+		{
+			name:     "duplicate connection error",
+			err:      fmt.Errorf("duplicate connection detected"),
+			expected: true,
+		},
+		{
+			name:     "already connected error",
+			err:      fmt.Errorf("agent already connected"),
+			expected: true,
+		},
+		{
+			name:     "unrelated error",
+			err:      fmt.Errorf("connection refused"),
+			expected: false,
+		},
+		{
+			name:     "empty error message",
+			err:      fmt.Errorf(""),
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ssh.IsConnectionAlreadyExistsError(tt.err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
