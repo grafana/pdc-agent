@@ -571,7 +571,7 @@ type socks5LoggerAdapter struct {
 	logger log.Logger
 }
 
-func (a *socks5LoggerAdapter) Errorf(format string, args ...interface{}) {
+func (a *socks5LoggerAdapter) Errorf(format string, args ...any) {
 	level.Error(a.logger).Log("msg", fmt.Sprintf(format, args...))
 }
 
