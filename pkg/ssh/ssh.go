@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -150,35 +151,30 @@ func (cfg *Config) addSSHFlag(s string) error {
 // Client is a client for ssh. It configures and runs ssh commands
 type Client struct {
 	*services.BasicService
-	cfg          *Config
-	SSHCmd       string // SSH command to run, defaults to "ssh". Require for testing.
-	logger       log.Logger
-	km           *KeyManager
-	metrics      *promMetrics
-	socks5Server *socks5.Server // Reused SOCKS5 server for all connections
+	cfg     *Config
+	SSHCmd  string // SSH command to run, defaults to "ssh". Require for testing.
+	logger  log.Logger
+	km      *KeyManager
+	metrics *promMetrics
+
+	socksServerMu sync.Mutex
+	socksServers  map[int]*socks5.Server
+	// socks5Server  *socks5.Server // Reused SOCKS5 server for all connections
 }
 
 // NewClient returns a new SSH client in an idle state
 func NewClient(cfg *Config, logger log.Logger, km *KeyManager) *Client {
-	var socks5Server *socks5.Server
+	client := &Client{
+		cfg:     cfg,
+		SSHCmd:  "ssh",
+		logger:  logger,
+		km:      km,
+		metrics: newPromMetrics(),
+	}
 
 	// Only create SOCKS5 server if using Go SSH client
 	if cfg.UseGoSSHClient {
-		socks5Server = socks5.NewServer(
-			socks5.WithLogger(&socks5LoggerAdapter{logger: logger}),
-			socks5.WithRule(&socks5.PermitCommand{
-				EnableConnect: true,
-			}),
-		)
-	}
-
-	client := &Client{
-		cfg:          cfg,
-		SSHCmd:       "ssh",
-		logger:       logger,
-		km:           km,
-		metrics:      newPromMetrics(),
-		socks5Server: socks5Server,
+		client.socksServers = make(map[int]*socks5.Server)
 	}
 
 	client.BasicService = services.NewIdleService(client.starting, client.stopping)
@@ -252,6 +248,7 @@ func (s *Client) runGoSSHClient(ctx context.Context) {
 	for c := 0; c < s.cfg.Connections; c++ {
 		connectionID := c + 1
 		go func(connID int) {
+
 			// Cache key material outside the retry loop to reuse across retries
 			var keyMaterial *InMemoryKeyMaterial
 
@@ -298,6 +295,23 @@ func (s *Client) runSingleConnection(ctx context.Context, connID int, keyMateria
 	// Connection established successfully - reset backoff on next retry
 	err = retry.ResetBackoffError{}
 
+	logger := log.With(s.logger, "connection", connID)
+
+	srv := socks5.NewServer(
+		socks5.WithLogger(&socks5LoggerAdapter{logger: logger}),
+		socks5.WithRule(&socks5.PermitCommand{
+			EnableConnect: true,
+		}),
+		socks5.WithDialAndRequest(socksDialerProvider(logger)),
+	)
+
+	// TODO do we need to track these?
+	s.socksServerMu.Lock()
+	s.socksServers[connID] = srv
+	s.socksServerMu.Unlock()
+
+	// TODO tidy up serbers on close?
+
 	// Start SSH keepalive goroutine (equivalent to ServerAliveInterval=15)
 	keepaliveCtx, keepaliveCancel := context.WithCancel(ctx)
 	defer keepaliveCancel()
@@ -313,7 +327,19 @@ func (s *Client) runSingleConnection(ctx context.Context, connID int, keyMateria
 	level.Debug(connectionLogger).Log("msg", "port forwarding established", "port", port)
 
 	// Handle channel loop - this blocks until connection closes
-	return s.handleChannelLoop(ctx, conn, channels, err, connectionLogger)
+	//
+	// TODO look at the gateway here for an example of how we can turn newChannels channel into a listener, then we can use the listener in server.Sere(). It would be nice to be consistent in how we deal with these I think.
+	return s.handleChannelLoop(ctx, conn, channels, err, connectionLogger, srv)
+}
+
+// socksDialerProvider returns a function that can be used to dial a SOCKS5 proxy
+//
+// the main purpose of using a custom dialer is so we can get access to the socks request information for telemetry.
+func socksDialerProvider(logger log.Logger) func(ctx context.Context, network string, addr string, request *socks5.Request) (net.Conn, error) {
+	return func(ctx context.Context, network string, addr string, request *socks5.Request) (net.Conn, error) {
+		level.Debug(logger).Log("msg", "dialing", "addr", addr)
+		return net.Dial(network, addr)
+	}
 }
 
 // getOrRefreshKeyMaterial returns existing key material or generates new keys if needed
@@ -414,7 +440,7 @@ func (s *Client) runKeepalive(ctx context.Context, conn *ssh.Client, logger log.
 }
 
 // handleChannelLoop processes incoming forwarded-tcpip channels until the connection closes
-func (s *Client) handleChannelLoop(ctx context.Context, conn *ssh.Client, channels <-chan ssh.NewChannel, successErr error, logger log.Logger) error {
+func (s *Client) handleChannelLoop(ctx context.Context, conn *ssh.Client, channels <-chan ssh.NewChannel, successErr error, logger log.Logger, srv *socks5.Server) error {
 	for {
 		select {
 		case <-ctx.Done():
@@ -436,7 +462,7 @@ func (s *Client) handleChannelLoop(ctx context.Context, conn *ssh.Client, channe
 				return successErr
 			}
 
-			go s.handleChannelOpen(newChannel, logger)
+			go s.handleChannelOpen(newChannel, logger, srv)
 		}
 	}
 }
@@ -495,7 +521,7 @@ func (s *Client) createSSHClientConfig(keyMaterial *InMemoryKeyMaterial) (*ssh.C
 	return config, nil
 }
 
-func (s *Client) handleChannelOpen(newChannel ssh.NewChannel, logger log.Logger) {
+func (s *Client) handleChannelOpen(newChannel ssh.NewChannel, logger log.Logger, srv *socks5.Server) {
 	// Try to parse channel extra data for logging/tracing metadata
 	// If parsing fails, we still accept the channel (lenient parsing)
 	var channelData RemoteForwardChannelData
@@ -536,10 +562,10 @@ func (s *Client) handleChannelOpen(newChannel ssh.NewChannel, logger log.Logger)
 	go ssh.DiscardRequests(requests)
 
 	// Handle the connection with enriched logger
-	s.handleForwardedConnection(channel, enrichedLogger)
+	s.handleForwardedConnection(channel, enrichedLogger, srv)
 }
 
-func (s *Client) handleForwardedConnection(channel ssh.Channel, logger log.Logger) {
+func (s *Client) handleForwardedConnection(channel ssh.Channel, logger log.Logger, srv *socks5.Server) {
 	defer channel.Close()
 
 	level.Debug(logger).Log("msg", "handling forwarded connection")
@@ -558,7 +584,7 @@ func (s *Client) handleForwardedConnection(channel ssh.Channel, logger log.Logge
 
 	// Reuse the SOCKS5 server instance created in NewClient
 	// ServeConn handles a single SOCKS5 connection
-	if err := s.socks5Server.ServeConn(conn); err != nil {
+	if err := srv.ServeConn(conn); err != nil {
 		level.Debug(logger).Log("msg", "SOCKS5 connection ended", "error", err)
 		s.metrics.socks5ConnectionsByStatus.WithLabelValues("error").Inc()
 	} else {
