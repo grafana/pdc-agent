@@ -20,7 +20,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	socks5 "github.com/things-go/go-socks5"
-	"github.com/things-go/go-socks5/statute"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/grafana/dskit/services"
@@ -167,7 +166,9 @@ func NewClient(cfg *Config, logger log.Logger, km *KeyManager) *Client {
 	if cfg.UseGoSSHClient {
 		socks5Server = socks5.NewServer(
 			socks5.WithLogger(&socks5LoggerAdapter{logger: logger}),
-			socks5.WithRule(&connectOnlyRule{}),
+			socks5.WithRule(&socks5.PermitCommand{
+				EnableConnect: true,
+			}),
 		)
 	}
 
@@ -572,14 +573,6 @@ type socks5LoggerAdapter struct {
 
 func (a *socks5LoggerAdapter) Errorf(format string, args ...interface{}) {
 	level.Error(a.logger).Log("msg", fmt.Sprintf(format, args...))
-}
-
-// connectOnlyRule is a RuleSet that only allows CONNECT commands.
-// BIND and ASSOCIATE commands are rejected.
-type connectOnlyRule struct{}
-
-func (r *connectOnlyRule) Allow(ctx context.Context, req *socks5.Request) (context.Context, bool) {
-	return ctx, req.Command == statute.CommandConnect
 }
 
 // channelNetConn wraps an ssh.Channel to implement net.Conn interface
