@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/go-kit/log"
@@ -187,10 +188,7 @@ func (s *Client) Collect(ch chan<- prometheus.Metric) {
 	s.metrics.tcpConnectionsCount.Collect(ch)
 	s.metrics.timeToConnect.Collect(ch)
 	s.metrics.sshConnectionsCount.Collect(ch)
-	s.metrics.socks5ConnectionsActive.Collect(ch)
-	s.metrics.socks5ConnectionsTotal.Collect(ch)
-	s.metrics.socks5ConnectionDuration.Collect(ch)
-	s.metrics.socks5ConnectionsByStatus.Collect(ch)
+	s.metrics.tcpConnectionDuration.Collect(ch)
 }
 
 func (s *Client) Describe(ch chan<- *prometheus.Desc) {
@@ -199,10 +197,7 @@ func (s *Client) Describe(ch chan<- *prometheus.Desc) {
 	s.metrics.tcpConnectionsCount.Describe(ch)
 	s.metrics.timeToConnect.Describe(ch)
 	s.metrics.sshConnectionsCount.Describe(ch)
-	s.metrics.socks5ConnectionsActive.Describe(ch)
-	s.metrics.socks5ConnectionsTotal.Describe(ch)
-	s.metrics.socks5ConnectionDuration.Describe(ch)
-	s.metrics.socks5ConnectionsByStatus.Describe(ch)
+	s.metrics.tcpConnectionDuration.Describe(ch)
 }
 
 func (s *Client) starting(ctx context.Context) error {
@@ -297,19 +292,6 @@ func (s *Client) runSingleConnection(ctx context.Context, connID int, keyMateria
 
 	logger := log.With(s.logger, "connection", connID)
 
-	srv := socks5.NewServer(
-		socks5.WithLogger(&socks5LoggerAdapter{logger: logger}),
-		socks5.WithRule(&socks5.PermitCommand{
-			EnableConnect: true,
-		}),
-		socks5.WithDialAndRequest(socksDialerProvider(logger)),
-	)
-
-	// TODO do we need to track these?
-	s.socksServerMu.Lock()
-	s.socksServers[connID] = srv
-	s.socksServerMu.Unlock()
-
 	// TODO tidy up serbers on close?
 
 	// Start SSH keepalive goroutine (equivalent to ServerAliveInterval=15)
@@ -326,19 +308,180 @@ func (s *Client) runSingleConnection(ctx context.Context, connID int, keyMateria
 
 	level.Debug(connectionLogger).Log("msg", "port forwarding established", "port", port)
 
+	pdcListener := NewListenerFromChannel(conn, channels)
+
+	srv := socks5.NewServer(
+		socks5.WithLogger(&socks5LoggerAdapter{logger: logger}),
+		socks5.WithRule(&socks5.PermitCommand{
+			EnableConnect: true,
+		}),
+		socks5.WithDialAndRequest(s.socksDialerProvider(logger, connID)),
+	)
+
+	// TODO do we need to track these?
+	s.socksServerMu.Lock()
+	s.socksServers[connID] = srv
+	s.socksServerMu.Unlock()
+
+	return srv.Serve(pdcListener)
 	// Handle channel loop - this blocks until connection closes
 	//
 	// TODO look at the gateway here for an example of how we can turn newChannels channel into a listener, then we can use the listener in server.Sere(). It would be nice to be consistent in how we deal with these I think.
-	return s.handleChannelLoop(ctx, conn, channels, err, connectionLogger, srv)
+	//return s.handleChannelLoop(ctx, conn, channels, err, connectionLogger, srv)
+}
+
+// NewListenerFromChannel creates a net.Listener that listens listen for new
+// requests on an ssh channel and converts the request to a net.Conn. The connection
+// that received the channel is required for implementing the net.Conn interface.
+func NewListenerFromChannel(parent ssh.Conn, nc <-chan ssh.NewChannel) net.Listener {
+	return &listener{
+		parent: parent,
+		nc:     nc,
+	}
+}
+
+// listener implements net.Listener
+type listener struct {
+	nc     <-chan ssh.NewChannel
+	parent ssh.Conn
+
+	mu         sync.RWMutex
+	chanclosed bool
+}
+
+func (l *listener) ok() bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return !l.chanclosed && l.parent != nil
+}
+
+func (l *listener) Accept() (net.Conn, error) {
+	if !l.ok() {
+		return nil, syscall.EINVAL
+	}
+
+	nc := <-l.nc
+
+	// channel close event. Error here as we don't want to try and do something
+	// with the event
+	if nc == nil {
+		l.mu.Lock()
+		l.chanclosed = true
+		l.mu.Unlock()
+		return nil, errors.New("ssh.NewChannel channel closed")
+	}
+
+	ch, _, err := (nc).Accept()
+	if err != nil {
+		return nil, err
+	}
+
+	// we dont need to force close channels on this conn, as they are related to
+	// proxy <-> gateway conns, not gateway <-> PDC agent.
+	return ToNetConn(l.parent, ch, false), nil
+}
+
+func (l *listener) Addr() net.Addr {
+	return l.parent.LocalAddr()
+}
+
+// Close does nothing - if you want to stop accepting requests, close the parent connection.
+func (l *listener) Close() error {
+	return nil
+}
+
+// ToNetConn converts an ssh connection and associated channel to a net.Conn
+func ToNetConn(parent ssh.Conn, ch ssh.Channel, forceClose bool) net.Conn {
+	return &channel{
+		Channel:    ch,
+		parentConn: parent,
+		forceClose: forceClose,
+	}
+}
+
+// channel implements net.Conn
+type channel struct {
+	ssh.Channel
+	parentConn       ssh.Conn
+	deadline         *time.Timer
+	deadlineCanceled chan struct{}
+	mu               sync.Mutex
+	forceClose       bool
+}
+
+// LocalAddr returns the local network address.
+func (c *channel) LocalAddr() net.Addr {
+	return c.parentConn.LocalAddr()
+}
+
+// RemoteAddr returns the remote network address.
+func (c *channel) RemoteAddr() net.Addr {
+	return c.parentConn.RemoteAddr()
+}
+
+// SetDeadline sets the read and write deadlines associated with the connection.
+func (c *channel) SetDeadline(t time.Time) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// Stop the time if it's already running
+	if c.deadline != nil {
+		c.deadline.Stop()
+		close(c.deadlineCanceled)
+		c.deadline = nil
+	}
+	// If t is zero, we don't want to set a deadline
+	if t.IsZero() {
+		return nil
+	}
+	// Set the deadline
+	c.deadline = time.NewTimer(time.Until(t))
+	c.deadlineCanceled = make(chan struct{})
+	go func(deadline *time.Timer, deadlineCanceled <-chan struct{}) {
+		select {
+		case <-deadline.C:
+			if c.forceClose {
+				// CloseWrite will send a EOF message to the peer instead of channel
+				// close. In the PDC agent, this will force close a client channel,
+				// rather than moving it to idle state. This frees up channels quicker
+				// in the case where channels are waiting a long time for responses to
+				// their TCP dials.
+				_ = c.Channel.CloseWrite()
+			} else {
+				_ = c.Channel.Close()
+			}
+		case <-deadlineCanceled:
+			return
+		}
+	}(c.deadline, c.deadlineCanceled)
+	return nil
+}
+
+// A zero value for t means I/O operations will not time out.
+func (c *channel) SetReadDeadline(_ time.Time) error {
+	return fmt.Errorf("not implemented")
+}
+
+// A zero value for t means I/O operations will not time out.
+func (c *channel) SetWriteDeadline(_ time.Time) error {
+	return fmt.Errorf("not implemented")
 }
 
 // socksDialerProvider returns a function that can be used to dial a SOCKS5 proxy
 //
 // the main purpose of using a custom dialer is so we can get access to the socks request information for telemetry.
-func socksDialerProvider(logger log.Logger) func(ctx context.Context, network string, addr string, request *socks5.Request) (net.Conn, error) {
+func (s *Client) socksDialerProvider(logger log.Logger, connId int) func(ctx context.Context, network string, addr string, request *socks5.Request) (net.Conn, error) {
 	return func(ctx context.Context, network string, addr string, request *socks5.Request) (net.Conn, error) {
 		level.Debug(logger).Log("msg", "dialing", "addr", addr)
-		return net.Dial(network, addr)
+		startTime := time.Now()
+		conn, err := net.Dial(network, addr)
+
+		if err != nil {
+			s.metrics.tcpConnectionDuration.WithLabelValues(fmt.Sprintf("%d", connId), addr, "error").Observe(time.Since(startTime).Seconds())
+			return conn, err
+		}
+
+		s.metrics.tcpConnectionDuration.WithLabelValues(fmt.Sprintf("%d", connId), addr, "success").Observe(time.Since(startTime).Seconds())
+		return conn, nil
 	}
 }
 
@@ -439,34 +582,6 @@ func (s *Client) runKeepalive(ctx context.Context, conn *ssh.Client, logger log.
 	}
 }
 
-// handleChannelLoop processes incoming forwarded-tcpip channels until the connection closes
-func (s *Client) handleChannelLoop(ctx context.Context, conn *ssh.Client, channels <-chan ssh.NewChannel, successErr error, logger log.Logger, srv *socks5.Server) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case newChannel, ok := <-channels:
-			if !ok {
-				level.Info(logger).Log("msg", "channel closed")
-				// Check if connection was closed due to limit reached or duplicate connection
-				waitErr := conn.Wait()
-				if IsConnectionLimitError(waitErr) {
-					level.Info(logger).Log("msg", "limit of connections for stack and network reached, reach out to grafana support to increase connection limits. exiting")
-					os.Exit(1)
-				}
-				if IsConnectionAlreadyExistsError(waitErr) {
-					level.Debug(logger).Log("msg", "server already had a connection for this tunnelID. trying a different server")
-					return retry.ResetBackoffError{}
-				}
-				// Return the error set earlier (ResetBackoffError if connection was successful)
-				return successErr
-			}
-
-			go s.handleChannelOpen(newChannel, logger, srv)
-		}
-	}
-}
-
 func (s *Client) createSSHClientConfig(keyMaterial *InMemoryKeyMaterial) (*ssh.ClientConfig, error) {
 	// Create signer from in-memory private key
 	signer, err := ssh.NewSignerFromKey(keyMaterial.PrivateKey)
@@ -521,77 +636,6 @@ func (s *Client) createSSHClientConfig(keyMaterial *InMemoryKeyMaterial) (*ssh.C
 	return config, nil
 }
 
-func (s *Client) handleChannelOpen(newChannel ssh.NewChannel, logger log.Logger, srv *socks5.Server) {
-	// Try to parse channel extra data for logging/tracing metadata
-	// If parsing fails, we still accept the channel (lenient parsing)
-	var channelData RemoteForwardChannelData
-	enrichedLogger := logger
-
-	if err := ssh.Unmarshal(newChannel.ExtraData(), &channelData); err != nil {
-		level.Debug(logger).Log("msg", "could not parse channel extra data, accepting anyway", "error", err)
-	} else {
-		// Successfully parsed - log the destination info
-		level.Debug(logger).Log(
-			"msg", "accepting forwarded-tcpip channel",
-			"dest", fmt.Sprintf("%s:%d", channelData.DestAddr, channelData.DestPort),
-			"origin", fmt.Sprintf("%s:%d", channelData.OriginAddr, channelData.OriginPort),
-		)
-
-		// TODO: When PDC gateway sends trace context in channelData.TraceParent:
-		// if channelData.TraceParent != "" {
-		//     traceID, spanID := parseTraceContext(channelData.TraceParent)
-		//     if traceID != "" {
-		//         enrichedLogger = log.With(logger, "traceID", traceID, "spanID", spanID)
-		//     }
-		// }
-		// TODO: When PDC gateway sends agent identity in channelData.AgentID:
-		// if channelData.AgentID != "" {
-		//     enrichedLogger = log.With(enrichedLogger, "agentID", channelData.AgentID)
-		// }
-	}
-
-	// Accept the channel
-	channel, requests, err := newChannel.Accept()
-	if err != nil {
-		level.Error(enrichedLogger).Log("msg", "failed to accept channel", "error", err)
-		return
-	}
-	defer channel.Close()
-
-	// Discard out-of-band requests
-	go ssh.DiscardRequests(requests)
-
-	// Handle the connection with enriched logger
-	s.handleForwardedConnection(channel, enrichedLogger, srv)
-}
-
-func (s *Client) handleForwardedConnection(channel ssh.Channel, logger log.Logger, srv *socks5.Server) {
-	defer channel.Close()
-
-	level.Debug(logger).Log("msg", "handling forwarded connection")
-
-	// Track SOCKS5 connection metrics
-	start := time.Now()
-	s.metrics.socks5ConnectionsActive.Inc()
-	s.metrics.socks5ConnectionsTotal.Inc()
-	defer func() {
-		s.metrics.socks5ConnectionsActive.Dec()
-		s.metrics.socks5ConnectionDuration.Observe(time.Since(start).Seconds())
-	}()
-
-	// Wrap our channel as a net.Conn
-	conn := &channelNetConn{Channel: channel}
-
-	// Reuse the SOCKS5 server instance created in NewClient
-	// ServeConn handles a single SOCKS5 connection
-	if err := srv.ServeConn(conn); err != nil {
-		level.Debug(logger).Log("msg", "SOCKS5 connection ended", "error", err)
-		s.metrics.socks5ConnectionsByStatus.WithLabelValues("error").Inc()
-	} else {
-		s.metrics.socks5ConnectionsByStatus.WithLabelValues("success").Inc()
-	}
-}
-
 // socks5LoggerAdapter adapts go-kit logger to socks5.Logger interface
 type socks5LoggerAdapter struct {
 	logger log.Logger
@@ -599,34 +643,6 @@ type socks5LoggerAdapter struct {
 
 func (a *socks5LoggerAdapter) Errorf(format string, args ...any) {
 	level.Error(a.logger).Log("msg", fmt.Sprintf(format, args...))
-}
-
-// channelNetConn wraps an ssh.Channel to implement net.Conn interface
-type channelNetConn struct {
-	ssh.Channel
-}
-
-func (c *channelNetConn) LocalAddr() net.Addr {
-	return &net.TCPAddr{IP: net.IPv4zero, Port: 0}
-}
-
-func (c *channelNetConn) RemoteAddr() net.Addr {
-	return &net.TCPAddr{IP: net.IPv4zero, Port: 0}
-}
-
-func (c *channelNetConn) SetDeadline(_ time.Time) error {
-	// SSH channels don't support deadlines
-	return nil
-}
-
-func (c *channelNetConn) SetReadDeadline(_ time.Time) error {
-	// SSH channels don't support deadlines
-	return nil
-}
-
-func (c *channelNetConn) SetWriteDeadline(_ time.Time) error {
-	// SSH channels don't support deadlines
-	return nil
 }
 
 func (s *Client) runOpenSSHClient(ctx context.Context, flags []string) {
