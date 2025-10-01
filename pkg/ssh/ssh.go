@@ -83,6 +83,7 @@ type Config struct {
 	// is valid and regenerate it if necessary.
 	CertCheckCertExpiryPeriod time.Duration
 	URL                       *url.URL
+	GracefulShutdownTimeout   time.Duration
 
 	// MetricsAddr is the port to expose metrics on
 	MetricsAddr  string
@@ -134,6 +135,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.Connections, "connections", 1, "The number of parallel ssh connections to open. Adding more connections will increase total bandwidth to your network. The limit is 50 connections across all your agents")
 	f.BoolVar(&cfg.UseGoSSHClient, "use-go-client", false, "Use the Go SSH client instead of the OpenSSH client")
 	f.BoolVar(&cfg.WriteKeysForDebug, "write-keys-for-debug", false, "Write in-memory keys to disk for debugging (only used with --use-go-client)")
+	f.DurationVar(&cfg.GracefulShutdownTimeout, "shutdown-timeout", 1*time.Minute, "How long the agent will wait for existing data source connections to close before forcefully shutting down")
 
 	f.IntVar(&cfg.DevPort, "dev-ssh-port", 2244, "[DEVELOPMENT ONLY] The port to use for agent connections to the PDC SSH gateway")
 
@@ -161,6 +163,9 @@ type Client struct {
 	socksServerMu sync.Mutex
 	socksServers  map[int]*socks5.Server
 	// socks5Server  *socks5.Server // Reused SOCKS5 server for all connections
+	//
+	connMux sync.Mutex
+	conns   map[int]ssh.Conn
 }
 
 // NewClient returns a new SSH client in an idle state
@@ -176,6 +181,7 @@ func NewClient(cfg *Config, logger log.Logger, km *KeyManager) *Client {
 	// Only create SOCKS5 server if using Go SSH client
 	if cfg.UseGoSSHClient {
 		client.socksServers = make(map[int]*socks5.Server)
+		client.conns = make(map[int]ssh.Conn)
 	}
 
 	client.BasicService = services.NewIdleService(client.starting, client.stopping)
@@ -275,7 +281,7 @@ func (s *Client) runSingleConnection(ctx context.Context, connID int, keyMateria
 	}
 
 	// Establish SSH connection with reverse port forwarding
-	conn, port, err := s.establishSSHConnection(ctx, *keyMaterial, connectionLogger)
+	conn, port, err := s.establishSSHConnection(ctx, *keyMaterial, connectionLogger, connID)
 	if err != nil {
 		level.Error(connectionLogger).Log("msg", "failed to establish connection", "error", err)
 		return err
@@ -501,7 +507,7 @@ func (s *Client) getOrRefreshKeyMaterial(ctx context.Context, current *InMemoryK
 }
 
 // establishSSHConnection creates and establishes an SSH connection with reverse port forwarding
-func (s *Client) establishSSHConnection(ctx context.Context, keyMaterial *InMemoryKeyMaterial, logger log.Logger) (*ssh.Client, uint32, error) {
+func (s *Client) establishSSHConnection(ctx context.Context, keyMaterial *InMemoryKeyMaterial, logger log.Logger, connID int) (*ssh.Client, uint32, error) {
 	// Create SSH client configuration from in-memory keys
 	config, err := s.createSSHClientConfig(keyMaterial)
 	if err != nil {
@@ -536,6 +542,11 @@ func (s *Client) establishSSHConnection(ctx context.Context, keyMaterial *InMemo
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to establish SSH connection: %w", err)
 	}
+
+	s.connMux.Lock()
+	s.conns[connID] = sshConn
+	s.connMux.Unlock()
+
 	conn := ssh.NewClient(sshConn, chans, reqs)
 
 	level.Info(logger).Log("msg", "SSH connection established")
@@ -722,8 +733,23 @@ func (s *Client) runOpenSSHClient(ctx context.Context, flags []string) {
 }
 
 func (s *Client) stopping(err error) error {
-	level.Info(s.logger).Log("msg", "stopping ssh client")
-	return err
+	if s.conns == nil {
+		return nil
+	}
+
+	s.connMux.Lock()
+	for _, conn := range s.conns {
+		_, _, _ = conn.SendRequest("cancel-tcpip-forward", false, ssh.Marshal(&RemoteForwardRequest{
+			BindAddr: "",
+			BindPort: 0,
+		}))
+	}
+	s.connMux.Unlock()
+
+	// TODO close as soon as all socks requests are done (or after a timeout)
+	<-time.After(s.cfg.GracefulShutdownTimeout)
+	level.Info(s.logger).Log("msg", "This was Grafana Private Data source Connect!")
+	return nil
 }
 
 // SSHFlagsFromConfig generates the array of flags to pass to the ssh command.
