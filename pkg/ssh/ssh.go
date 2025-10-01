@@ -84,6 +84,7 @@ type Config struct {
 	CertCheckCertExpiryPeriod time.Duration
 	URL                       *url.URL
 	GracefulShutdownTimeout   time.Duration
+	EnablePhoneHomeTelemetry  bool
 
 	// MetricsAddr is the port to expose metrics on
 	MetricsAddr  string
@@ -135,7 +136,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.Connections, "connections", 1, "The number of parallel ssh connections to open. Adding more connections will increase total bandwidth to your network. The limit is 50 connections across all your agents")
 	f.BoolVar(&cfg.UseGoSSHClient, "use-go-client", false, "Use the Go SSH client instead of the OpenSSH client")
 	f.BoolVar(&cfg.WriteKeysForDebug, "write-keys-for-debug", false, "Write in-memory keys to disk for debugging (only used with --use-go-client)")
-	f.DurationVar(&cfg.GracefulShutdownTimeout, "shutdown-timeout", 1*time.Minute, "How long the agent will wait for existing data source connections to close before forcefully shutting down")
+	f.DurationVar(&cfg.GracefulShutdownTimeout, "shutdown-timeout", 1*time.Second, "How long the agent will wait for existing data source connections to close before forcefully shutting down")
+	f.BoolVar(&cfg.EnablePhoneHomeTelemetry, "enable-phone-home-telemetry", true, "Enable phone home telemetry")
 
 	f.IntVar(&cfg.DevPort, "dev-ssh-port", 2244, "[DEVELOPMENT ONLY] The port to use for agent connections to the PDC SSH gateway")
 
@@ -321,7 +323,7 @@ func (s *Client) runSingleConnection(ctx context.Context, connID int, keyMateria
 		socks5.WithRule(&socks5.PermitCommand{
 			EnableConnect: true,
 		}),
-		socks5.WithDialAndRequest(s.socksDialerProvider(logger, connID)),
+		socks5.WithDialAndRequest(s.socksDialerProvider(logger, connID, conn)),
 	)
 
 	// TODO do we need to track these?
@@ -475,7 +477,7 @@ func (c *channel) SetWriteDeadline(_ time.Time) error {
 // socksDialerProvider returns a function that can be used to dial a SOCKS5 proxy
 //
 // the main purpose of using a custom dialer is so we can get access to the socks request information for telemetry.
-func (s *Client) socksDialerProvider(logger log.Logger, connId int) func(ctx context.Context, network string, addr string, request *socks5.Request) (net.Conn, error) {
+func (s *Client) socksDialerProvider(logger log.Logger, connId int, sshConn ssh.Conn) func(ctx context.Context, network string, addr string, request *socks5.Request) (net.Conn, error) {
 	return func(ctx context.Context, network string, addr string, request *socks5.Request) (net.Conn, error) {
 		level.Debug(logger).Log("msg", "dialing", "addr", addr)
 		startTime := time.Now()
@@ -483,12 +485,36 @@ func (s *Client) socksDialerProvider(logger log.Logger, connId int) func(ctx con
 
 		if err != nil {
 			s.metrics.tcpConnectionDuration.WithLabelValues(fmt.Sprintf("%d", connId), addr, "error").Observe(time.Since(startTime).Seconds())
+			s.sendConnectionEvent(sshConn, connId, addr, "error")
 			return conn, err
 		}
 
 		s.metrics.tcpConnectionDuration.WithLabelValues(fmt.Sprintf("%d", connId), addr, "success").Observe(time.Since(startTime).Seconds())
+		s.sendConnectionEvent(sshConn, connId, addr, "success")
+
 		return conn, nil
 	}
+}
+
+type connectEvent struct {
+	connID int
+	addr   string
+	status string
+}
+
+func (s *Client) sendConnectionEvent(conn ssh.Conn, connId int, addr string, status string) {
+	level.Debug(s.logger).Log("msg", "maybe sending connection event")
+
+	if !s.cfg.EnablePhoneHomeTelemetry {
+		return
+	}
+
+	level.Debug(s.logger).Log("msg", "sending connection event")
+	_, _, _ = conn.SendRequest("connection-event", false, ssh.Marshal(&connectEvent{
+		connID: connId,
+		addr:   addr,
+		status: status,
+	}))
 }
 
 // getOrRefreshKeyMaterial returns existing key material or generates new keys if needed
