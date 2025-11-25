@@ -311,6 +311,7 @@ func (s *Client) SSHFlagsFromConfig() ([]string, error) {
 		"-p",
 		fmt.Sprintf("%d", s.cfg.Port),
 		"-R", "0",
+		"-NT",
 	}
 
 	for _, o := range optionsList {
