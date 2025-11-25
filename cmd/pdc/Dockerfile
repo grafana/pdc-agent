@@ -1,4 +1,5 @@
-FROM alpine:3.22.2
+FROM alpine:3.22
+RUN apk update && apk upgrade --no-cache
 RUN apk add --no-cache --repository=http://dl-cdn.alpinelinux.org/alpine/edge/main openssh
 COPY pdc /usr/bin/pdc
 RUN addgroup -g 30000 pdc && adduser -G pdc -u 30000 pdc -D
