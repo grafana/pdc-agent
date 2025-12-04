@@ -1,4 +1,4 @@
-FROM alpine:3.22.2
+FROM alpine:3.23.0
 RUN apk update
 RUN apk add busybox=1.37.0-r20
 RUN apk add --no-cache --repository=http://dl-cdn.alpinelinux.org/alpine/edge/main openssh
