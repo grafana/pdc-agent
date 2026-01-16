@@ -47,10 +47,10 @@ type mainFlags struct {
 	APIFQDN     string
 	GatewayFQDN string
 
-	// NewRegionFormat when set to true, uses the new region format for API and Gateway URLs
+	// RegionFormat when set to true, uses the new region format for API and Gateway URLs
 	// API: private-datasource-connect-api.{cluster}.{domain} instead of private-datasource-connect-api-{cluster}.{domain}
 	// Gateway: private-datasource-connect.{cluster}.{domain} instead of private-datasource-connect-{cluster}.{domain}
-	NewRegionFormat bool
+	RegionFormat bool
 
 	// The fields below were added to make local development easier.
 	//
@@ -67,17 +67,13 @@ func (mf *mainFlags) RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&mf.APIFQDN, "api-fqdn", "", "FQDN for the PDC API. If set, this will take precedence over the cluster and domain flags")
 	fs.StringVar(&mf.GatewayFQDN, "gateway-fqdn", "", "FQDN for the PDC Gateway. If set, this will take precedence over the cluster and domain flags")
 
-	fs.BoolVar(&mf.NewRegionFormat, "new-region-format", false, "Use the new region format for API and Gateway URLs (private-datasource-connect-api.{cluster}.{domain} and private-datasource-connect.{cluster}.{domain} instead of private-datasource-connect-api-{cluster}.{domain} and private-datasource-connect-{cluster}.{domain})")
+	fs.BoolVar(&mf.RegionFormat, "region-format", false, "Use the new region format for API and Gateway URLs (private-datasource-connect-api.{cluster}.{domain} and private-datasource-connect.{cluster}.{domain} instead of private-datasource-connect-api-{cluster}.{domain} and private-datasource-connect-{cluster}.{domain})")
 
 	fs.BoolVar(&mf.DevMode, "dev-mode", false, "[DEVELOPMENT ONLY] run the agent in development mode")
 
 	// flags should always take precedence over env vars
 	if mf.Cluster == "" {
 		mf.Cluster = os.Getenv("GCLOUD_PDC_CLUSTER")
-	}
-	if !mf.NewRegionFormat {
-		envValue := os.Getenv("PDC_NEW_REGION_FORMAT")
-		mf.NewRegionFormat = envValue == "true" || envValue == "1"
 	}
 }
 
@@ -222,7 +218,7 @@ func run(logger log.Logger, sshConfig *ssh.Config, pdcConfig *pdc.Config) error 
 func createURLs(cfg *mainFlags) (api *url.URL, gateway *url.URL, err error) {
 	var apiURL string
 	var gatewayURL string
-	if cfg.NewRegionFormat {
+	if cfg.RegionFormat {
 		apiURL = fmt.Sprintf("https://private-datasource-connect-api.%s.%s", cfg.Cluster, cfg.Domain)
 		gatewayURL = fmt.Sprintf("private-datasource-connect.%s.%s", cfg.Cluster, cfg.Domain)
 	} else {
