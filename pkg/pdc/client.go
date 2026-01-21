@@ -256,23 +256,27 @@ type logAdapter struct {
 var _ retryablehttp.LeveledLogger = (*logAdapter)(nil)
 
 func (l *logAdapter) Debug(msg string, kv ...interface{}) {
-	keyvals := []interface{}{"msg", msg}
+	keyvals := make([]interface{}, 0, 2+len(kv))
+	keyvals = append(keyvals, "msg", msg)
 	keyvals = append(keyvals, kv...)
 	level.Debug(l.l).Log(keyvals...)
 }
 
 func (l *logAdapter) Info(msg string, kv ...interface{}) {
-	keyvals := []interface{}{"msg", msg}
+	keyvals := make([]interface{}, 0, 2+len(kv))
+	keyvals = append(keyvals, "msg", msg)
 	keyvals = append(keyvals, kv...)
 	level.Info(l.l).Log(keyvals...)
 }
 func (l *logAdapter) Warn(msg string, kv ...interface{}) {
-	keyvals := []interface{}{"msg", msg}
+	keyvals := make([]interface{}, 0, 2+len(kv))
+	keyvals = append(keyvals, "msg", msg)
 	keyvals = append(keyvals, kv...)
 	level.Warn(l.l).Log(keyvals...)
 }
 func (l *logAdapter) Error(msg string, kv ...interface{}) {
-	keyvals := []interface{}{"msg", msg}
+	keyvals := make([]interface{}, 0, 2+len(kv))
+	keyvals = append(keyvals, "msg", msg)
 	keyvals = append(keyvals, kv...)
 	level.Error(l.l).Log(keyvals...)
 }
