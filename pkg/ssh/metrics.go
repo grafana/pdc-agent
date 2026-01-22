@@ -6,15 +6,18 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/pdc-agent/pkg/metrics"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
 
 var (
-	reConnSuccess   = regexp.MustCompile(`connected to (.+?) port (\d+)`)
-	reConnFailure   = regexp.MustCompile(`connect_to (.+?)(?: port (\d+))?:`)
-	reChannelsCount = regexp.MustCompile(`nchannels (\d+)`)
+	reConnSuccess           = regexp.MustCompile(`connected to (.+?) port (\d+)`)
+	reConnFailure           = regexp.MustCompile(`connect_to (.+?)(?: port (\d+))?:`)
+	reChannelsCount         = regexp.MustCompile(`nchannels (\d+)`)
+	channelWarningThreshold = 100
 )
 
 type promMetrics struct {
@@ -73,6 +76,7 @@ type logMetricsParser struct {
 	m          *promMetrics
 	connStart  time.Time
 	connection string
+	logger     log.Logger
 }
 
 func (p logMetricsParser) parseLogMetrics(msg []byte) {
@@ -92,6 +96,9 @@ func (p logMetricsParser) channelsCount(msg []byte) {
 	matches := reChannelsCount.FindSubmatch(msg)
 	if len(matches) > 1 {
 		if value, err := strconv.Atoi(string(matches[1])); err == nil {
+			if value > channelWarningThreshold && p.logger != nil {
+				level.Warn(p.logger).Log("msg", "high channel count", "count", value, "hint", "consider increasing -connections")
+			}
 			p.m.openChannelsCount.WithLabelValues(p.connection).Set(float64(value))
 		}
 	}

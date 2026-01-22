@@ -198,6 +198,7 @@ func (s *Client) starting(ctx context.Context) error {
 					m:          s.metrics,
 					connStart:  startTime,
 					connection: fmt.Sprintf("%d", connectionID),
+					logger:     s.logger,
 				}
 			}
 
