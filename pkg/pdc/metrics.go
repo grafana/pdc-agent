@@ -1,7 +1,7 @@
 package pdc
 
 import (
-	"github.com/grafana/pdc-agent/pkg/metrics"
+	"github.com/grafana/pdc-agent/pkg/pdcmetrics"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -11,7 +11,7 @@ type promMetrics struct {
 
 func newPromMetrics() *promMetrics {
 	return &promMetrics{
-		signingRequests: metrics.NewNativeHistogramVec(
+		signingRequests: pdcmetrics.NewNativeHistogramVec(
 			prometheus.HistogramOpts{
 				Name:      "signing_requests_duration_seconds",
 				Help:      "Duration of signing requests in seconds",
