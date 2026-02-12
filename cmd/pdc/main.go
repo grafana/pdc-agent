@@ -19,8 +19,8 @@ import (
 	"github.com/go-kit/log/level"
 
 	"github.com/grafana/dskit/services"
-	"github.com/grafana/pdc-agent/pkg/metrics"
 	"github.com/grafana/pdc-agent/pkg/pdc"
+	"github.com/grafana/pdc-agent/pkg/pdcmetrics"
 	"github.com/grafana/pdc-agent/pkg/ssh"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -206,7 +206,7 @@ func run(logger log.Logger, sshConfig *ssh.Config, pdcConfig *pdc.Config) error 
 	}
 
 	// If ssh client start successfully, start the metrics server
-	ms := metrics.NewMetricsServer(logger, sshConfig.MetricsAddr)
+	ms := pdcmetrics.NewMetricsServer(logger, sshConfig.MetricsAddr)
 	go ms.Run()
 
 	// Wait for the ssh client to exit

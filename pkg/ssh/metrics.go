@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/pdc-agent/pkg/metrics"
+	"github.com/grafana/pdc-agent/pkg/pdcmetrics"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -61,7 +61,7 @@ func newPromMetrics() *promMetrics {
 			},
 			[]string{"connection", "target", "status"},
 		),
-		timeToConnect: metrics.NewNativeHistogramVec(
+		timeToConnect: pdcmetrics.NewNativeHistogramVec(
 			prometheus.HistogramOpts{
 				Name:      "ssh_time_to_connect_seconds",
 				Help:      "Time spent to establish SSH connection",
