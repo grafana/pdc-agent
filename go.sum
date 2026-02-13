@@ -13,8 +13,8 @@ github.com/go-logfmt/logfmt v0.6.0 h1:wGYYu3uicYdqXVgoYbvnkrPVXkuLM1p1ifugDMEdRi
 github.com/go-logfmt/logfmt v0.6.0/go.mod h1:WYhtIu8zTZfxdn5+rREduYbwxfcBr/Vr6KEVveWlfTs=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
 github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX3N/iU=
-github.com/grafana/dskit v0.0.0-20260211202609-055c19399255 h1:HUj2DipFXkMOJzM+iQTGcfqlf6KIoc5PtemNIN1OX9s=
-github.com/grafana/dskit v0.0.0-20260211202609-055c19399255/go.mod h1:M2NzmN1SL1duPeCTEJmttPyiAlYAxPS+G+Btza5F0Q8=
+github.com/grafana/dskit v0.0.0-20260213164647-ab41154e52ad h1:9zIGd7vATUaH/tw0LVMck1mKs7c3XiSqjDCli6Bpgi8=
+github.com/grafana/dskit v0.0.0-20260213164647-ab41154e52ad/go.mod h1:M2NzmN1SL1duPeCTEJmttPyiAlYAxPS+G+Btza5F0Q8=
 github.com/hashicorp/go-cleanhttp v0.5.2 h1:035FKYIWjmULyFRBKPs8TBQoi0x6d9G4xc9neXJWAZQ=
 github.com/hashicorp/go-cleanhttp v0.5.2/go.mod h1:kO/YDlP8L1346E6Sodw+PrpBSV4/SoxCXGY6BqNFT48=
 github.com/hashicorp/go-hclog v1.6.3 h1:Qr2kF+eVWjTiYmU7Y31tYlP1h0q/X3Nl3tPGdaB11/k=

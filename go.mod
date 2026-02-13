@@ -4,7 +4,7 @@ go 1.25.7
 
 require (
 	github.com/go-kit/log v0.2.1
-	github.com/grafana/dskit v0.0.0-20260211202609-055c19399255
+	github.com/grafana/dskit v0.0.0-20260213164647-ab41154e52ad
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/mikesmitty/edkey v0.0.0-20170222072505-3356ea4e686a
 	github.com/prometheus/client_golang v1.23.2
