@@ -51,6 +51,7 @@ dockers:
       - grafana/{{ .ProjectName }}:{{ .Version }}-amd64
     build_flag_templates:
       - "--platform=linux/amd64"
+      - "--provenance=false"
   - use: buildx
     goos: linux
     goarch: arm64
@@ -62,6 +63,7 @@ dockers:
       - grafana/{{ .ProjectName }}:{{ .Version }}-arm64
     build_flag_templates:
       - "--platform=linux/arm64"
+      - "--provenance=false"
 
 docker_manifests:
 - name_template: 'grafana/{{ .ProjectName }}:{{ .Version }}'
