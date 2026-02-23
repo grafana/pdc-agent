@@ -46,7 +46,7 @@ make
 
 ### Snapshot/testing release
 
-Use `workflow_dispatch` on the `goreleaser` Action to publish a specific SHA as an image.
+If you want to test a release before publishing, you can create a snapshot release and publish to docker by pushing your change onto github (either in a branch or main) and going to https://github.com/grafana/pdc-agent/actions/workflows/release.yml and clicking "run workflow" and then selecting your branch. Your image can then be found at INSERT_LINK_HERE and will be tagged with TAGNAME so people know its just for testing 
 
 ### Versioned release
 
