@@ -44,6 +44,12 @@ make
 
 ## Releasing
 
+### Snapshot/testing release
+
+Use `workflow_dispatch` on the `goreleaser` Action to publish a specific SHA as an image.
+
+### Versioned release
+
 Create public releases with `gh release create vX.X.X --generate-notes`
 
 Releases are managed using [goreleaser](https://goreleaser.com/). Use the following command to build binaries on your local machine.
