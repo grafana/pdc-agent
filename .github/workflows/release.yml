@@ -10,6 +10,10 @@ on:
         description: 'Custom tag for snapshot builds'
         required: false
         default: ''
+      ref:
+        description: 'Branch or commit to build from'
+        required: false
+        default: 'main'
 permissions:
   contents: write
   packages: write
@@ -23,6 +27,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ inputs.ref || github.ref }}
       - name: Set GIT_LAST_COMMIT_DATE
         run: echo "GIT_LAST_COMMIT_DATE=$(git log -1 --date=iso-strict --format=%cd)" >> $GITHUB_ENV
       # Forces goreleaser to use the correct previous tag for the changelog

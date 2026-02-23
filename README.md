@@ -44,6 +44,12 @@ make
 
 ## Releasing
 
+### Snapshot/testing release
+
+If you want to test a release before publishing, you can create a snapshot release and publish to docker by pushing your change to a branch and going to https://github.com/grafana/pdc-agent/actions/workflows/release.yml and clicking "run workflow" and then selecting your branch. A docker image will then be built against that branch and tagged with whatever you specify in `snapshot_tag`.
+
+### Versioned release
+
 Create public releases with `gh release create vX.X.X --generate-notes`
 
 Releases are managed using [goreleaser](https://goreleaser.com/). Use the following command to build binaries on your local machine.
