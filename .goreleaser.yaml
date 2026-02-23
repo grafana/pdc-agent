@@ -81,7 +81,7 @@ docker_manifests:
 checksum:
   name_template: 'checksums.txt'
 snapshot:
-  name_template: "{{ incpatch .Version }}-next"
+  name_template: '{{ with .Env.SNAPSHOT_TAG }}{{ . }}{{ else }}{{ incpatch .Version }}-next{{ end }}'
 changelog:
   sort: asc
   filters:
