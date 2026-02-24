@@ -6,6 +6,9 @@ on:
       ref:
         description: 'Branch or commit to build from'
         required: true
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   testing-release:
