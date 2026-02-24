@@ -29,9 +29,9 @@ jobs:
       - name: Build and push snapshot Docker image
         run: |
           TAG="$(git rev-parse --short HEAD)"
+          NAME="grafana/pdc-agent:testing-${TAG}"
           make build
           cp pdc cmd/pdc/pdc
-          docker build -t "grafana/pdc-agent:testing-${TAG}" cmd/pdc/
-          docker push "grafana/pdc-agent:${TAG}"
-
-          echo "Pushed grafana/pdc-agent:${TAG}"
+          docker build -t "${NAME}" cmd/pdc/
+          docker push "${NAME}"
+          echo "Pushed ${NAME}"
