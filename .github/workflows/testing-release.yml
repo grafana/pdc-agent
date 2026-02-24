@@ -1,0 +1,34 @@
+name: testing-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or commit to build from'
+        required: true
+
+jobs:
+  testing-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.ref }}
+      - run: git fetch --force --tags
+      - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6
+        with:
+          go-version: "1.25.7"
+          cache: false
+      - name: Login to DockerHub
+        uses: grafana/shared-workflows/actions/dockerhub-login@081a366728379fd0426b9cfef190e9a21c2d5418 # dockerhub-login/v1.0.3
+      - name: Build and push snapshot Docker image
+        run: |
+          TAG="$(git rev-parse --short HEAD)"
+          make build
+          cp pdc cmd/pdc/pdc
+          docker build -t "grafana/pdc-agent:testing-${TAG}" cmd/pdc/
+          docker push "grafana/pdc-agent:${TAG}"
+
+          echo "Pushed grafana/pdc-agent:${TAG}"

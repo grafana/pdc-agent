@@ -46,7 +46,7 @@ make
 
 ### Snapshot/testing release
 
-If you want to test a release before publishing, you can create a snapshot release and publish to docker by pushing your change to a branch and going to https://github.com/grafana/pdc-agent/actions/workflows/release.yml and clicking "run workflow" and then selecting your branch. A docker image will then be built against that branch and tagged with whatever you specify in `snapshot_tag`.
+If you want to test a release before publishing, you can create a snapshot release and publish to docker by pushing your change to a branch and going to https://github.com/grafana/pdc-agent/actions/workflows/testing-release.yml and clicking "run workflow" and then selecting your branch. A docker image will then be built against that branch.
 
 ### Versioned release
 
