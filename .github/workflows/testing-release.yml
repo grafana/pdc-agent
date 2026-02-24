@@ -30,7 +30,7 @@ jobs:
         run: |
           TAG="$(git rev-parse --short HEAD)"
           NAME="grafana/pdc-agent:testing-${TAG}"
-          make build
+          CGO_ENABLED=0 make build
           cp pdc cmd/pdc/pdc
           docker build -t "${NAME}" cmd/pdc/
           docker push "${NAME}"
