@@ -40,6 +40,8 @@ type Config struct {
 
 	KeyFile           string
 	SSHFlags          []string // Additional flags to be passed to ssh(1). e.g. --ssh-flag="-vvv" --ssh-flag="-L 80:localhost:80"
+	UseGoClient       bool
+	ShutdownTimeout   time.Duration
 	Port              int
 	LogLevel          string
 	PDC               pdc.Config
@@ -89,6 +91,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.KeyFile, "ssh-key-file", def.KeyFile, "The path to the SSH key file.")
 	f.BoolVar(&cfg.SkipSSHValidation, "skip-ssh-validation", false, "Ignore openssh minimum version constraints.")
 	f.Func("ssh-flag", "Additional flags to be passed to ssh. Can be set more than once.", cfg.addSSHFlag)
+	f.BoolVar(&cfg.UseGoClient, "use-go-client", false, "Use the Go SSH client instead of OpenSSH")
+	f.DurationVar(&cfg.ShutdownTimeout, "shutdown-timeout", 15*time.Second, "How long to wait for in-flight requests to drain before force-closing in Go SSH client mode")
 	f.BoolVar(&cfg.ForceKeyFileOverwrite, "force-key-file-overwrite", false, "Force a new ssh key pair to be generated")
 	f.DurationVar(&cfg.CertExpiryWindow, "cert-expiry-window", 5*time.Minute, "The time before the certificate expires to renew it.")
 	f.DurationVar(&cfg.CertCheckCertExpiryPeriod, "cert-check-expiry-period", 1*time.Minute, "How often to check certificate validity. 0 means it is only checked at start")
@@ -118,6 +122,7 @@ type Client struct {
 	logger  log.Logger
 	km      *KeyManager
 	metrics *promMetrics
+	goState *goRuntimeState
 }
 
 // NewClient returns a new SSH client in an idle state
@@ -128,6 +133,7 @@ func NewClient(cfg *Config, logger log.Logger, km *KeyManager) *Client {
 		logger:  logger,
 		km:      km,
 		metrics: newPromMetrics(),
+		goState: newGoRuntimeState(),
 	}
 
 	client.BasicService = services.NewIdleService(client.starting, client.stopping)
@@ -153,7 +159,7 @@ func (s *Client) Describe(ch chan<- *prometheus.Desc) {
 func (s *Client) starting(ctx context.Context) error {
 	level.Info(s.logger).Log("msg", "starting ssh client")
 
-	if !s.cfg.SkipSSHValidation {
+	if !s.cfg.UseGoClient && !s.cfg.SkipSSHValidation {
 		if err := validateSSHVersion(ctx, s.logger, s.SSHCmd); err != nil {
 			return fmt.Errorf("invalid SSH version: %w", err)
 		}
@@ -167,6 +173,11 @@ func (s *Client) starting(ctx context.Context) error {
 			level.Error(s.logger).Log("msg", "could not check or generate certificate", "error", err)
 			return err
 		}
+	}
+
+	if s.cfg.UseGoClient {
+		s.runGoSSHClient(ctx)
+		return nil
 	}
 
 	// Attempt to parse SSH flags before triggering the goroutine, so we can exit
@@ -258,6 +269,9 @@ func (s *Client) starting(ctx context.Context) error {
 
 func (s *Client) stopping(err error) error {
 	level.Info(s.logger).Log("msg", "stopping ssh client")
+	if s.cfg.UseGoClient {
+		s.stopGoSSHClient()
+	}
 	return err
 }
 

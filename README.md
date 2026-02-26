@@ -21,6 +21,15 @@ Use the `-log.level` flag. Run the agent with the `-help` flag to see the possib
 
 Flags prefixed with `-dev` are used for local development and can be removed at any time.
 
+## Go SSH client mode
+
+The agent can run a Go-based SSH client implementation behind a feature flag:
+
+- `--use-go-client=true` enables the Go client path.
+- `--shutdown-timeout=15s` controls how long the Go client waits for in-flight requests to drain during shutdown before force-closing.
+
+When `--use-go-client=false` (default), the existing OpenSSH path is used.
+
 # Developer guide
 
 ## Dependencies

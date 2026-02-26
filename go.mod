@@ -9,6 +9,7 @@ require (
 	github.com/mikesmitty/edkey v0.0.0-20170222072505-3356ea4e686a
 	github.com/prometheus/client_golang v1.23.2
 	github.com/stretchr/testify v1.11.1
+	github.com/things-go/go-socks5 v0.0.5
 	golang.org/x/crypto v0.47.0
 	pgregory.net/rapid v1.2.0
 )
