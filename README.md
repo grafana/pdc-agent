@@ -63,3 +63,12 @@ If you want the docker image locally, you can run
 ```
 goreleaser release --snapshot --clean
 ```
+
+## Claude diagnostic skill [Beta!]: 
+
+Troubleshoot issues by using [Claude](code.claude.com) to read through pdc-agent logs and diagnose potential issues. 
+
+For example: 
+```bash
+claude /diagnose-pdc path/to/pdc-agent-debug-logs.log
+```
