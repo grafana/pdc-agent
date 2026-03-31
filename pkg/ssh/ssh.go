@@ -170,9 +170,7 @@ func (s *Client) Describe(ch chan<- *prometheus.Desc) {
 	s.metrics.goOpenChannelsCount.Describe(ch)
 }
 
-func (s *Client) starting(ctx context.Context) error {
-	level.Info(s.logger).Log("msg", "starting ssh client")
-
+func (s *Client) checkForConflictingSSHFlags() {
 	if !s.cfg.GoSSH && len(s.cfg.PermitDomains) > 0 {
 		level.Warn(s.logger).Log("msg", "-permit-domains must be used with -use-gossh.")
 	}
@@ -180,6 +178,28 @@ func (s *Client) starting(ctx context.Context) error {
 	if !s.cfg.GoSSH && s.cfg.ConnectionTimeout > time.Second*1 {
 		level.Warn(s.logger).Log("msg", "-connect-timeout must be used with -use-gossh.")
 	}
+
+}
+
+func (s *Client) startGoSSH(ctx context.Context) error {
+	level.Info(s.logger).Log("msg", "starting gossh client")
+
+	if err := s.validateGoSSH(); err != nil {
+		return err
+	}
+
+	go func() {
+		if err := s.runGoSSH(ctx); err != nil && ctx.Err() == nil {
+			level.Error(s.logger).Log("msg", "gossh exited unexpectedly", "err", err)
+		}
+	}()
+
+	return nil
+}
+
+func (s *Client) starting(ctx context.Context) error {
+	level.Info(s.logger).Log("msg", "starting ssh client")
+	s.checkForConflictingSSHFlags()
 
 	if !s.cfg.GoSSH && !s.cfg.SkipSSHValidation {
 		if err := validateSSHVersion(ctx, s.logger, s.SSHCmd); err != nil {
@@ -198,19 +218,7 @@ func (s *Client) starting(ctx context.Context) error {
 	}
 
 	if s.cfg.GoSSH {
-		level.Info(s.logger).Log("msg", "starting gossh client")
-
-		if err := s.validateGoSSH(); err != nil {
-			return err
-		}
-
-		go func() {
-			if err := s.runGoSSH(ctx); err != nil && ctx.Err() == nil {
-				level.Error(s.logger).Log("msg", "gossh exited unexpectedly", "err", err)
-			}
-		}()
-
-		return nil
+		return s.startGoSSH(ctx)
 	}
 
 	flags, err := s.SSHFlagsFromConfig()
