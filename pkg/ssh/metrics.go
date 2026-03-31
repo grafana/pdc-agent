@@ -26,6 +26,7 @@ type promMetrics struct {
 	tcpConnectionsCount *prometheus.CounterVec // connections to the target host
 	timeToConnect       *prometheus.HistogramVec
 	openChannelsCount   *prometheus.GaugeVec
+	goOpenChannelsCount prometheus.Gauge
 }
 
 func newPromMetrics() *promMetrics {
@@ -68,6 +69,13 @@ func newPromMetrics() *promMetrics {
 				Namespace: "pdc_agent",
 			},
 			[]string{"connection"},
+		),
+		goOpenChannelsCount: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Name:      "go_open_channels_count",
+				Help:      "Total number of gossh channels",
+				Namespace: "pdc_agent",
+			},
 		),
 	}
 }

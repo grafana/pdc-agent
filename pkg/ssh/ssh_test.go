@@ -477,6 +477,37 @@ func TestLoggerWriterAdapter(t *testing.T) {
 	}
 }
 
+func TestGoClientStarts(t *testing.T) {
+	logger := log.NewNopLogger()
+	cfg := ssh.DefaultConfig()
+	cfg.GoSSH = true
+	mClient := mockPDCClient{}
+	km := ssh.NewKeyManager(cfg, logger, mClient)
+	client := ssh.NewClient(cfg, logger, km)
+	client.SSHCmd = "foo/bar"
+
+	ctx := context.Background()
+
+	// When starting the client
+	err := client.StartAsync(ctx)
+	// Then the client should be in the starting state
+	assert.NoError(t, err)
+	assert.Equal(t, "Starting", client.State().String())
+
+	// And eventually move to the running state
+	err = client.AwaitRunning(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, "Running", client.State().String())
+
+	// When stopping the service
+	client.StopAsync()
+	assert.NoError(t, err)
+
+	// Then is should eventually move to the terminated state
+	_ = client.AwaitTerminated(ctx)
+	assert.Equal(t, "Terminated", client.State().String())
+}
+
 type assertLogger struct {
 	// iterate through assertFns, call one each time Write is called
 	assertFns []assertFn
