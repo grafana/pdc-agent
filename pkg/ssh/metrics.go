@@ -72,7 +72,7 @@ func newPromMetrics() *promMetrics {
 		),
 		goOpenChannelsCount: prometheus.NewGauge(
 			prometheus.GaugeOpts{
-				Name:      "go_open_channels_count",
+				Name:      "go_open_channels",
 				Help:      "Total number of gossh channels",
 				Namespace: "pdc_agent",
 			},

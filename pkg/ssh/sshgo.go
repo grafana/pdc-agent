@@ -27,6 +27,34 @@ type remoteForwardResponse struct {
 	BindPort uint32
 }
 
+func (s *Client) validateGoSSH() error {
+	if s.cfg.Connections > 1 {
+		level.Warn(s.logger).Log("msg", "-use-gossh doesn't respect the -connections flag currently")
+	}
+
+	if len(s.cfg.SSHFlags) > 0 {
+		level.Warn(s.logger).Log("msg", "The -use-gossh flag ignores most -ssh-flag values.")
+		domains, err := MapSSHPermitToSocks(s.cfg.SSHFlags)
+		if err != nil {
+			return err
+		}
+		if len(domains) > 0 {
+			level.Warn(s.logger).Log("msg", "Please migrate PermitRemoteOpen domains to -permit-domains flag for the -use-gossh flag.")
+			s.cfg.PermitDomains = domains
+		}
+	}
+	if _, err := deriveCertSigner(s.cfg.KeyFile, s.logger); err != nil {
+		return err
+	}
+
+	hostsfile := path.Join(s.cfg.KeyFileDir(), KnownHostsFile)
+	if _, err := knownhosts.New(hostsfile); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (s *Client) runGoSSH(ctx context.Context) error {
 	backoffCtrl := backoff.New(ctx, backoff.Config{
 		MinBackoff: 1 * time.Second,
@@ -67,7 +95,7 @@ func (s *Client) runGoSSH(ctx context.Context) error {
 		conn, err := s.dialWithTimeout(ctx, host, config, timerStart)
 
 		if err != nil {
-			level.Error(s.logger).Log(err)
+			level.Error(s.logger).Log("error during dialWithTimeout", err)
 			if conn != nil {
 				_ = conn.Close()
 			}
@@ -103,7 +131,7 @@ func (s *Client) runGoSSH(ctx context.Context) error {
 		}
 
 		if !ok {
-			level.Error(s.logger).Log("tcpip-forward request rejected.")
+			level.Error(s.logger).Log("tcpip-forward request rejected.", ok)
 			s.waitAndClose(backoffCtrl)
 			continue
 		}

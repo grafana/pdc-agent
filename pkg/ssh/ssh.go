@@ -107,8 +107,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 	f.IntVar(&cfg.DevPort, "dev-ssh-port", 2244, "[DEVELOPMENT ONLY] The port to use for agent connections to the PDC SSH gateway")
 	f.BoolVar(&cfg.GoSSH, "use-gossh", false, "Use Go-based SSH. Defaults to OpenSSH.")
-	f.Func("permit-domains", "List of domains that are allowed to recieve queries (defaults to 'all')", cfg.buildDomains)
-	f.DurationVar(&cfg.ConnectionTimeout, "connect-timeout", 1*time.Second, "Specifies the timeout (in seconds) used when connecting. Simliar to ConnectTimeout in OpenSSH.")
+	f.Func("permit-domains", "List of domains that are allowed to receive queries (defaults to 'all')", cfg.buildDomains)
+	f.DurationVar(&cfg.ConnectionTimeout, "connect-timeout", 1*time.Second, "Specifies the timeout (in seconds) used when connecting. Similar to ConnectTimeout in OpenSSH.")
 }
 
 func (cfg Config) KeyFileDir() string {
@@ -181,10 +181,6 @@ func (s *Client) starting(ctx context.Context) error {
 		level.Warn(s.logger).Log("msg", "-connect-timeout must be used with -use-gossh.")
 	}
 
-	if s.cfg.GoSSH && s.cfg.Connections > 1 {
-		level.Warn(s.logger).Log("msg", "-use-gossh doesn't respect the -connections flag currently")
-	}
-
 	if !s.cfg.GoSSH && !s.cfg.SkipSSHValidation {
 		if err := validateSSHVersion(ctx, s.logger, s.SSHCmd); err != nil {
 			return fmt.Errorf("invalid SSH version: %w", err)
@@ -203,18 +199,17 @@ func (s *Client) starting(ctx context.Context) error {
 
 	if s.cfg.GoSSH {
 		level.Info(s.logger).Log("msg", "starting gossh client")
-		if len(s.cfg.SSHFlags) > 0 {
-			level.Warn(s.logger).Log("msg", "The -use-gossh flag ignores most -ssh-flag values.")
-			domains, err := MapSSHPermitToSocks(s.cfg.SSHFlags)
-			if err != nil {
-				return err
-			}
-			if len(domains) > 0 {
-				level.Warn(s.logger).Log("msg", "Please migrate PermitRemoteOpen domains to -permit-domains flag for the -use-gossh flag.")
-				s.cfg.PermitDomains = domains
-			}
+
+		if err := s.validateGoSSH(); err != nil {
+			return err
 		}
-		go s.runGoSSH(ctx)
+
+		go func() {
+			if err := s.runGoSSH(ctx); err != nil && ctx.Err() == nil {
+				level.Error(s.logger).Log("msg", "gossh exited unexpectedly", "err", err)
+			}
+		}()
+
 		return nil
 	}
 

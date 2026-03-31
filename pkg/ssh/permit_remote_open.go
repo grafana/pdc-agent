@@ -31,9 +31,9 @@ func (p *PermitRemoteOpen) Allow(ctx context.Context, req *socks5.Request) (cont
 	}
 
 	// lowercase domains so we can compare
-	var domains []string
-	for _, d := range p.Domains {
-		domains = append(domains, strings.ToLower(d))
+	domains := make([]string, len(p.Domains))
+	for i, d := range p.Domains {
+		domains[i] = strings.ToLower(d)
 	}
 	host := strings.ToLower(req.RawDestAddr.FQDN)
 
