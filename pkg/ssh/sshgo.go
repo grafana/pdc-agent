@@ -43,14 +43,6 @@ func (s *Client) validateGoSSH() error {
 			s.cfg.PermitDomains = domains
 		}
 	}
-	if _, err := deriveCertSigner(s.cfg.KeyFile, s.logger); err != nil {
-		return err
-	}
-
-	hostsfile := path.Join(s.cfg.KeyFileDir(), KnownHostsFile)
-	if _, err := knownhosts.New(hostsfile); err != nil {
-		return err
-	}
 
 	return nil
 }
