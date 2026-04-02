@@ -26,6 +26,7 @@ type promMetrics struct {
 	tcpConnectionsCount *prometheus.CounterVec // connections to the target host
 	timeToConnect       *prometheus.HistogramVec
 	openChannelsCount   *prometheus.GaugeVec
+	sshProcessCPU       *sshProcessCPUMetrics
 }
 
 func newPromMetrics() *promMetrics {
@@ -69,6 +70,7 @@ func newPromMetrics() *promMetrics {
 			},
 			[]string{"connection"},
 		),
+		sshProcessCPU: newSSHProcessCPUMetrics(),
 	}
 }
 

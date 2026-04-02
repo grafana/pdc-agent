@@ -140,6 +140,7 @@ func (s *Client) Collect(ch chan<- prometheus.Metric) {
 	s.metrics.tcpConnectionsCount.Collect(ch)
 	s.metrics.timeToConnect.Collect(ch)
 	s.metrics.sshConnectionsCount.Collect(ch)
+	s.metrics.sshProcessCPU.Collect(ch)
 }
 
 func (s *Client) Describe(ch chan<- *prometheus.Desc) {
@@ -148,6 +149,7 @@ func (s *Client) Describe(ch chan<- *prometheus.Desc) {
 	s.metrics.tcpConnectionsCount.Describe(ch)
 	s.metrics.timeToConnect.Describe(ch)
 	s.metrics.sshConnectionsCount.Describe(ch)
+	s.metrics.sshProcessCPU.Describe(ch)
 }
 
 func (s *Client) starting(ctx context.Context) error {
@@ -183,6 +185,7 @@ func (s *Client) starting(ctx context.Context) error {
 		go retry.Forever(retryOpts, func() (err error) {
 			startTime := time.Now()
 			connectionID := c + 1
+			connectionLabel := fmt.Sprintf("%d", connectionID)
 			connectionLogger := log.With(s.logger, "connection", connectionID)
 
 			defer func() {
@@ -197,7 +200,7 @@ func (s *Client) starting(ctx context.Context) error {
 				mParser = &logMetricsParser{
 					m:          s.metrics,
 					connStart:  startTime,
-					connection: fmt.Sprintf("%d", connectionID),
+					connection: connectionLabel,
 					logger:     s.logger,
 				}
 			}
@@ -215,8 +218,19 @@ func (s *Client) starting(ctx context.Context) error {
 			cmd.Stdout = loggerWriter
 			cmd.Stderr = loggerWriter
 			s.metrics.sshConnectionsCount.Inc()
-			err = cmd.Run()
-			s.metrics.sshConnectionsCount.Dec()
+			defer s.metrics.sshConnectionsCount.Dec()
+
+			err = cmd.Start()
+			if err != nil {
+				return err
+			}
+
+			if cmd.Process != nil {
+				s.metrics.sshProcessCPU.track(connectionLabel, cmd.Process.Pid)
+				defer s.metrics.sshProcessCPU.untrack(connectionLabel, cmd.Process.Pid)
+			}
+
+			err = cmd.Wait()
 			if ctx.Err() != nil {
 				return nil // context was canceled
 			}
@@ -233,7 +247,7 @@ func (s *Client) starting(ctx context.Context) error {
 
 			exitCode := cmd.ProcessState.ExitCode()
 			level.Info(connectionLogger).Log("msg", "ssh client exited. restarting", "exitCode", exitCode, "resetBackoff", errors.Is(err, retry.ResetBackoffError{}))
-			s.metrics.sshRestartsCount.WithLabelValues(fmt.Sprintf("%d", connectionID), fmt.Sprintf("%d", exitCode)).Inc()
+			s.metrics.sshRestartsCount.WithLabelValues(connectionLabel, fmt.Sprintf("%d", exitCode)).Inc()
 
 			// Check keys and cert validity before restart, create new cert if required.
 			// This covers the case where a certificate has become invalid since the last start.
