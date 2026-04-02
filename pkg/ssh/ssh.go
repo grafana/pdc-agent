@@ -247,20 +247,6 @@ func (s *Client) starting(ctx context.Context) error {
 			level.Info(connectionLogger).Log("msg", "ssh client exited. restarting", "exitCode", exitCode, "resetBackoff", errors.Is(err, retry.ResetBackoffError{}))
 			s.metrics.sshRestartsCount.WithLabelValues(connectionLabel, fmt.Sprintf("%d", exitCode)).Inc()
 
-			// Check keys and cert validity before restart, create new cert if required.
-			// This covers the case where a certificate has become invalid since the last start.
-			// Do not return here: we want to keep trying to connect in case the PDC API
-			// is temporarily unavailable.
-			//
-			// They keymanager has logic to perform a background key refresh, but this
-			// logic should stay in place in case that is disabled.
-			if s.km != nil {
-				kerr := s.km.CreateKeys(ctx, false)
-				if kerr != nil {
-					level.Error(connectionLogger).Log("msg", "could not check or generate certificate", "error", kerr)
-				}
-			}
-
 			return err
 		})
 	}
