@@ -225,10 +225,8 @@ func (s *Client) starting(ctx context.Context) error {
 				return err
 			}
 
-			if cmd.Process != nil {
-				s.metrics.sshProcessCPU.track(connectionLabel, cmd.Process.Pid)
-				defer s.metrics.sshProcessCPU.untrack(connectionLabel, cmd.Process.Pid)
-			}
+			s.metrics.sshProcessCPU.track(connectionLabel, cmd.Process.Pid)
+			defer s.metrics.sshProcessCPU.untrack(connectionLabel, cmd.Process.Pid)
 
 			err = cmd.Wait()
 			if ctx.Err() != nil {
