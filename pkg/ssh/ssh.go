@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/pdc-agent/pkg/pdc"
 	"github.com/grafana/pdc-agent/pkg/retry"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/crypto/ssh"
 )
 
 const (
@@ -64,6 +65,13 @@ type Config struct {
 	// Used for local development.
 	// DevPort is the port number for the PDC gateway
 	DevPort int
+
+	// Use Go-based SSH instead of OpenSSH
+	GoSSH bool
+
+	PermitDomains []string
+
+	ConnectionTimeout time.Duration
 }
 
 // DefaultConfig returns a Config with some sensible defaults set
@@ -86,6 +94,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	def := DefaultConfig()
 
 	cfg.SSHFlags = []string{}
+	cfg.PermitDomains = []string{}
 	f.StringVar(&cfg.KeyFile, "ssh-key-file", def.KeyFile, "The path to the SSH key file.")
 	f.BoolVar(&cfg.SkipSSHValidation, "skip-ssh-validation", false, "Ignore openssh minimum version constraints.")
 	f.Func("ssh-flag", "Additional flags to be passed to ssh. Can be set more than once.", cfg.addSSHFlag)
@@ -97,12 +106,19 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.Connections, "connections", 1, "The number of parallel ssh connections to open. Adding more connections will increase total bandwidth to your network. The limit is 50 connections across all your agents")
 
 	f.IntVar(&cfg.DevPort, "dev-ssh-port", 2244, "[DEVELOPMENT ONLY] The port to use for agent connections to the PDC SSH gateway")
-
+	f.BoolVar(&cfg.GoSSH, "use-gossh", false, "Use Go-based SSH. Defaults to OpenSSH.")
+	f.Func("permit-domains", "List of domains that are allowed to receive queries (defaults to 'all')", cfg.buildDomains)
+	f.DurationVar(&cfg.ConnectionTimeout, "connect-timeout", 1*time.Second, "Specifies the timeout (in seconds) used when connecting. Similar to ConnectTimeout in OpenSSH.")
 }
 
 func (cfg Config) KeyFileDir() string {
 	dir, _ := path.Split(cfg.KeyFile)
 	return dir
+}
+
+func (cfg *Config) buildDomains(s string) error {
+	cfg.PermitDomains = append(cfg.PermitDomains, s)
+	return nil
 }
 
 func (cfg *Config) addSSHFlag(s string) error {
@@ -113,11 +129,13 @@ func (cfg *Config) addSSHFlag(s string) error {
 // Client is a client for ssh. It configures and runs ssh commands
 type Client struct {
 	*services.BasicService
-	cfg     *Config
-	SSHCmd  string // SSH command to run, defaults to "ssh". Require for testing.
-	logger  log.Logger
-	km      *KeyManager
-	metrics *promMetrics
+	cfg         *Config
+	SSHCmd      string // SSH command to run, defaults to "ssh". Require for testing.
+	logger      log.Logger
+	km          *KeyManager
+	metrics     *promMetrics
+	forwardPort *uint32
+	sshClient   *ssh.Client
 }
 
 // NewClient returns a new SSH client in an idle state
@@ -140,6 +158,7 @@ func (s *Client) Collect(ch chan<- prometheus.Metric) {
 	s.metrics.tcpConnectionsCount.Collect(ch)
 	s.metrics.timeToConnect.Collect(ch)
 	s.metrics.sshConnectionsCount.Collect(ch)
+	s.metrics.goOpenChannelsCount.Collect(ch)
 }
 
 func (s *Client) Describe(ch chan<- *prometheus.Desc) {
@@ -148,12 +167,41 @@ func (s *Client) Describe(ch chan<- *prometheus.Desc) {
 	s.metrics.tcpConnectionsCount.Describe(ch)
 	s.metrics.timeToConnect.Describe(ch)
 	s.metrics.sshConnectionsCount.Describe(ch)
+	s.metrics.goOpenChannelsCount.Describe(ch)
+}
+
+func (s *Client) checkForConflictingSSHFlags() {
+	if !s.cfg.GoSSH && len(s.cfg.PermitDomains) > 0 {
+		level.Warn(s.logger).Log("msg", "-permit-domains must be used with -use-gossh.")
+	}
+
+	if !s.cfg.GoSSH && s.cfg.ConnectionTimeout > time.Second*1 {
+		level.Warn(s.logger).Log("msg", "-connect-timeout must be used with -use-gossh.")
+	}
+
+}
+
+func (s *Client) startGoSSH(ctx context.Context) error {
+	level.Info(s.logger).Log("msg", "starting gossh client")
+
+	if err := s.validateGoSSH(); err != nil {
+		return err
+	}
+
+	go func() {
+		if err := s.runGoSSH(ctx); err != nil && ctx.Err() == nil {
+			level.Error(s.logger).Log("msg", "gossh exited unexpectedly", "err", err)
+		}
+	}()
+
+	return nil
 }
 
 func (s *Client) starting(ctx context.Context) error {
 	level.Info(s.logger).Log("msg", "starting ssh client")
+	s.checkForConflictingSSHFlags()
 
-	if !s.cfg.SkipSSHValidation {
+	if !s.cfg.GoSSH && !s.cfg.SkipSSHValidation {
 		if err := validateSSHVersion(ctx, s.logger, s.SSHCmd); err != nil {
 			return fmt.Errorf("invalid SSH version: %w", err)
 		}
@@ -169,8 +217,10 @@ func (s *Client) starting(ctx context.Context) error {
 		}
 	}
 
-	// Attempt to parse SSH flags before triggering the goroutine, so we can exit
-	// if the parsing fails
+	if s.cfg.GoSSH {
+		return s.startGoSSH(ctx)
+	}
+
 	flags, err := s.SSHFlagsFromConfig()
 	if err != nil {
 		level.Error(s.logger).Log("msg", fmt.Sprintf("could not parse flags: %s", err))
@@ -252,11 +302,22 @@ func (s *Client) starting(ctx context.Context) error {
 			return err
 		})
 	}
-
 	return nil
 }
 
 func (s *Client) stopping(err error) error {
+	if s.sshClient != nil && s.forwardPort != nil {
+		_, _, e := s.sshClient.SendRequest("cancel-tcpip-forward", false, ssh.Marshal(&remoteForwardRequest{BindAddr: "", BindPort: *s.forwardPort}))
+
+		if e != nil {
+			level.Error(s.logger).Log("error sending cancel-tcpip-forward", e)
+		}
+	}
+
+	if s.sshClient != nil {
+		_ = s.sshClient.Close()
+	}
+
 	level.Info(s.logger).Log("msg", "stopping ssh client")
 	return err
 }
