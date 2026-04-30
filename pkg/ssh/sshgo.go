@@ -27,6 +27,10 @@ type remoteForwardResponse struct {
 	BindPort uint32
 }
 
+type PDCStatus struct {
+	Status uint32
+}
+
 func (s *Client) validateGoSSH() error {
 	if s.cfg.Connections > 1 {
 		level.Warn(s.logger).Log("msg", "-use-gossh doesn't respect the -connections flag currently")
@@ -45,6 +49,20 @@ func (s *Client) validateGoSSH() error {
 	}
 
 	return nil
+}
+
+func (s *Client) getConnectionStatus() (int, bool) {
+	ok, payload, err := s.sshClient.SendRequest("pdc-connection-status", true, nil)
+	if err != nil || !ok {
+		return 0, false
+	}
+
+	var resp PDCStatus
+	if err := ssh.Unmarshal(payload, &resp); err != nil {
+		return 0, false
+	}
+
+	return int(resp.Status), true
 }
 
 func (s *Client) runGoSSH(ctx context.Context) error {
@@ -123,7 +141,19 @@ func (s *Client) runGoSSH(ctx context.Context) error {
 		}
 
 		if !ok {
-			level.Error(s.logger).Log("tcpip-forward request rejected.", ok)
+			status, ok := s.getConnectionStatus()
+
+			if ok {
+				switch status {
+				case ConnectionAlreadyExistsCode:
+					level.Debug(s.logger).Log("msg", "server already had a connection for this tunnelID. trying a different server")
+				case ConnectionLimitReachedCode:
+					level.Info(s.logger).Log("msg", "limit of connections for stack and network reached, reach out to grafana support to increase connection limits. exiting")
+					os.Exit(1)
+				}
+			}
+
+			level.Error(s.logger).Log("msg", "tcpip-forward request rejected.")
 			s.waitAndClose(backoffCtrl)
 			continue
 		}
