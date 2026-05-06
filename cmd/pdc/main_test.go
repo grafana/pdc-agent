@@ -8,6 +8,9 @@ import (
 )
 
 func TestCreateURLs(t *testing.T) {
+	const cluster string = "some-cluster"
+	const someDomain string = "some-domain.net"
+	const customGateway string = "custom-gateway.example.com"
 	tests := []struct {
 		name         string
 		cluster      string
@@ -21,7 +24,7 @@ func TestCreateURLs(t *testing.T) {
 		// Old format tests (default behavior)
 		{
 			name:         "old format - default domain",
-			cluster:      "some-cluster",
+			cluster:      cluster,
 			domain:       "grafana.net",
 			regionFormat: false,
 			wantAPI:      "https://private-datasource-connect-api-some-cluster.grafana.net",
@@ -29,8 +32,8 @@ func TestCreateURLs(t *testing.T) {
 		},
 		{
 			name:         "old format - custom domain",
-			cluster:      "some-cluster",
-			domain:       "some-domain.net",
+			cluster:      cluster,
+			domain:       someDomain,
 			regionFormat: false,
 			wantAPI:      "https://private-datasource-connect-api-some-cluster.some-domain.net",
 			wantGW:       "private-datasource-connect-some-cluster.some-domain.net",
@@ -38,7 +41,7 @@ func TestCreateURLs(t *testing.T) {
 		// New format tests
 		{
 			name:         "new format - default domain",
-			cluster:      "some-cluster",
+			cluster:      cluster,
 			domain:       "grafana.net",
 			regionFormat: true,
 			wantAPI:      "https://private-datasource-connect-api.some-cluster.grafana.net",
@@ -46,8 +49,8 @@ func TestCreateURLs(t *testing.T) {
 		},
 		{
 			name:         "new format - custom domain",
-			cluster:      "some-cluster",
-			domain:       "some-domain.net",
+			cluster:      cluster,
+			domain:       someDomain,
 			regionFormat: true,
 			wantAPI:      "https://private-datasource-connect-api.some-cluster.some-domain.net",
 			wantGW:       "private-datasource-connect.some-cluster.some-domain.net",
@@ -55,8 +58,8 @@ func TestCreateURLs(t *testing.T) {
 		// Custom FQDN precedence tests
 		{
 			name:         "custom api-fqdn overrides format",
-			cluster:      "some-cluster",
-			domain:       "some-domain.net",
+			cluster:      cluster,
+			domain:       someDomain,
 			regionFormat: true,
 			apiFQDN:      "custom-api.example.com",
 			wantAPI:      "https://custom-api.example.com",
@@ -64,22 +67,22 @@ func TestCreateURLs(t *testing.T) {
 		},
 		{
 			name:         "custom gateway-fqdn overrides format",
-			cluster:      "some-cluster",
-			domain:       "some-domain.net",
+			cluster:      cluster,
+			domain:       someDomain,
 			regionFormat: true,
-			gatewayFQDN:  "custom-gateway.example.com",
+			gatewayFQDN:  customGateway,
 			wantAPI:      "https://private-datasource-connect-api.some-cluster.some-domain.net",
-			wantGW:       "custom-gateway.example.com",
+			wantGW:       customGateway,
 		},
 		{
 			name:         "both custom FQDNs override format",
-			cluster:      "some-cluster",
-			domain:       "some-domain.net",
+			cluster:      cluster,
+			domain:       someDomain,
 			regionFormat: true,
 			apiFQDN:      "custom-api.example.com",
-			gatewayFQDN:  "custom-gateway.example.com",
+			gatewayFQDN:  customGateway,
 			wantAPI:      "https://custom-api.example.com",
-			wantGW:       "custom-gateway.example.com",
+			wantGW:       customGateway,
 		},
 	}
 
