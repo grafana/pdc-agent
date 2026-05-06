@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -11,11 +12,12 @@ import (
 )
 
 func main() {
+	ctx := context.Background()
 	next := flag.Bool("next", false, "print next version")
 	release := flag.Bool("release", false, "release version")
 	flag.Parse()
 
-	getLatestCmd := exec.Command("gh", "release", "view", "--json", "tagName", "--jq", ".tagName")
+	getLatestCmd := exec.CommandContext(ctx, "gh", "release", "view", "--json", "tagName", "--jq", ".tagName")
 	b, err := getLatestCmd.CombinedOutput()
 	if err != nil {
 		log.Fatal(err)
@@ -34,7 +36,7 @@ func main() {
 	}
 
 	if *release {
-		releaseCmd := exec.Command("gh", "release", "create", nextVer, "--generate-notes")
+		releaseCmd := exec.CommandContext(ctx, "gh", "release", "create", nextVer, "--generate-notes")
 		b, err := releaseCmd.CombinedOutput()
 		if err != nil {
 			log.Fatal(err)
