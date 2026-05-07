@@ -30,51 +30,53 @@ type promMetrics struct {
 }
 
 func newPromMetrics() *promMetrics {
+	const namespace string = "pdc_agent"
+	const connection string = "connection"
 	return &promMetrics{
 		sshConnectionsCount: prometheus.NewGauge(
 			prometheus.GaugeOpts{
 				Name:      "ssh_connections",
 				Help:      "Number of open SSH connections",
-				Namespace: "pdc_agent",
+				Namespace: namespace,
 			},
 		),
 		sshRestartsCount: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name:      "ssh_restarts_total",
 				Help:      "Total number of SSH restarts",
-				Namespace: "pdc_agent",
+				Namespace: namespace,
 			},
-			[]string{"connection", "exit_code"},
+			[]string{connection, "exit_code"},
 		),
 		openChannelsCount: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name:      "ssh_open_channels",
 				Help:      "Number of open SSH channels",
-				Namespace: "pdc_agent",
+				Namespace: namespace,
 			},
-			[]string{"connection"},
+			[]string{connection},
 		),
 		tcpConnectionsCount: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name:      "tcp_connections_total",
 				Help:      "Number of open TCP connections",
-				Namespace: "pdc_agent",
+				Namespace: namespace,
 			},
-			[]string{"connection", "target", "status"},
+			[]string{connection, "target", "status"},
 		),
 		timeToConnect: pdcmetrics.NewNativeHistogramVec(
 			prometheus.HistogramOpts{
 				Name:      "ssh_time_to_connect_seconds",
 				Help:      "Time spent to establish SSH connection",
-				Namespace: "pdc_agent",
+				Namespace: namespace,
 			},
-			[]string{"connection"},
+			[]string{connection},
 		),
 		goOpenChannelsCount: prometheus.NewGauge(
 			prometheus.GaugeOpts{
 				Name:      "go_open_channels",
 				Help:      "Total number of gossh channels",
-				Namespace: "pdc_agent",
+				Namespace: namespace,
 			},
 		),
 	}
