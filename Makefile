@@ -15,4 +15,7 @@ clean:
 	go clean
 	rm ${BINARY_NAME}
 
-.PHONY: all build test lint clean
+release:
+	go run ./scripts/release.go -release
+
+.PHONY: all build test lint clean release

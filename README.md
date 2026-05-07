@@ -50,7 +50,17 @@ If you want to test a release before publishing, you can create a snapshot relea
 
 ### Versioned release
 
-Create public releases with `gh release create vX.X.X --generate-notes`
+Create public releases with:
+
+```
+make release
+```
+
+The release script reads the latest release from GitHub, increments it one patch version, and then runs `gh release create vX.X.X --generate-notes` with the bumped version. To print the next version without releasing, run:
+
+```
+go run ./scripts/release.go -next
+```
 
 Releases are managed using [goreleaser](https://goreleaser.com/). Use the following command to build binaries on your local machine.
 
