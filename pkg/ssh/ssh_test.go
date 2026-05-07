@@ -301,6 +301,7 @@ func TestClient_SSHArgs(t *testing.T) {
 	})
 
 	t.Run("ssh-flags get appended to command", func(t *testing.T) {
+		const optionFlag string = "-o"
 		cfg := ssh.DefaultConfig()
 
 		cfg.URL = mustParseURL("host.grafana.net")
@@ -328,13 +329,13 @@ func TestClient_SSHArgs(t *testing.T) {
 			"-R",
 			"0",
 			"-T",
-			"-o", fmt.Sprintf("CertificateFile=%s", cfg.KeyFile+certSuffix),
-			"-o", "ConnectTimeout=3",
-			"-o", "PermitRemoteOpen=host:123 host:456",
-			"-o", "ServerAliveInterval=15",
-			"-o", "TCPKeepAlive=no",
-			"-o", "TestOption=2",
-			"-o", fmt.Sprintf("UserKnownHostsFile=%s", path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile)),
+			optionFlag, fmt.Sprintf("CertificateFile=%s", cfg.KeyFile+certSuffix),
+			optionFlag, "ConnectTimeout=3",
+			optionFlag, "PermitRemoteOpen=host:123 host:456",
+			optionFlag, "ServerAliveInterval=15",
+			optionFlag, "TCPKeepAlive=no",
+			optionFlag, "TestOption=2",
+			optionFlag, fmt.Sprintf("UserKnownHostsFile=%s", path.Join(cfg.KeyFileDir(), ssh.KnownHostsFile)),
 			"-vvv",
 		}
 		assert.Equal(t, expected, result)

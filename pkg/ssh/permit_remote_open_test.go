@@ -17,6 +17,7 @@ func TestMapSSHPermitToSocks(t *testing.T) {
 }
 
 func TestPermitRemoteOpenAllow(t *testing.T) {
+	const exampleCom string = "example.com"
 	tests := []struct {
 		name    string
 		domains []string
@@ -28,19 +29,19 @@ func TestPermitRemoteOpenAllow(t *testing.T) {
 			name:    "rejects non-connect",
 			domains: nil,
 			command: statute.CommandBind,
-			addr:    &statute.AddrSpec{FQDN: "example.com", Port: 443},
+			addr:    &statute.AddrSpec{FQDN: exampleCom, Port: 443},
 			allow:   false,
 		},
 		{
 			name:    "allows all when no domains configured",
 			domains: nil,
 			command: statute.CommandConnect,
-			addr:    &statute.AddrSpec{FQDN: "example.com", Port: 443},
+			addr:    &statute.AddrSpec{FQDN: exampleCom, Port: 443},
 			allow:   true,
 		},
 		{
 			name:    "matches fqdn case insensitively",
-			domains: []string{"example.com"},
+			domains: []string{exampleCom},
 			command: statute.CommandConnect,
 			addr:    &statute.AddrSpec{FQDN: "EXAMPLE.COM", Port: 443},
 			allow:   true,
@@ -49,7 +50,7 @@ func TestPermitRemoteOpenAllow(t *testing.T) {
 			name:    "matches host and port",
 			domains: []string{"example.com:443"},
 			command: statute.CommandConnect,
-			addr:    &statute.AddrSpec{FQDN: "example.com", Port: 443},
+			addr:    &statute.AddrSpec{FQDN: exampleCom, Port: 443},
 			allow:   true,
 		},
 		{
@@ -63,7 +64,7 @@ func TestPermitRemoteOpenAllow(t *testing.T) {
 			name:    "rejects unmatched destination",
 			domains: []string{"example.com:443"},
 			command: statute.CommandConnect,
-			addr:    &statute.AddrSpec{FQDN: "example.com", Port: 8443},
+			addr:    &statute.AddrSpec{FQDN: exampleCom, Port: 8443},
 			allow:   false,
 		},
 	}
