@@ -21,7 +21,6 @@ import (
 
 	"github.com/grafana/pdc-agent/pkg/pdc"
 	"github.com/grafana/pdc-agent/pkg/ssh"
-	"github.com/mikesmitty/edkey"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
@@ -498,10 +497,7 @@ func generateKeys(validBeforeDur string, validAfterDur string) ([]byte, []byte, 
 	pubKey, privKey, _ := ed25519.GenerateKey(rand.Reader)
 	sshPubKey, _ := gossh.NewPublicKey(pubKey)
 
-	pemKey := &pem.Block{
-		Type:  "OPENSSH PRIVATE KEY",
-		Bytes: edkey.MarshalED25519PrivateKey(privKey),
-	}
+	pemKey, _ := gossh.MarshalPrivateKey(privKey, "")
 	pemPrivKey := pem.EncodeToMemory(pemKey)
 
 	caSigner, _ := gossh.NewSignerFromKey(caKey)

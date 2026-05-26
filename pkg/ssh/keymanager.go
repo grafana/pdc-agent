@@ -16,7 +16,6 @@ import (
 	"github.com/go-kit/log/level"
 
 	"github.com/grafana/pdc-agent/pkg/pdc"
-	"github.com/mikesmitty/edkey"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -265,13 +264,13 @@ func (km KeyManager) generateKeyPair() error {
 	pubKey, privKey, _ := ed25519.GenerateKey(rand.Reader)
 	sshPubKey, _ := ssh.NewPublicKey(pubKey)
 
-	pemKey := &pem.Block{
-		Type:  "OPENSSH PRIVATE KEY",
-		Bytes: edkey.MarshalED25519PrivateKey(privKey),
+	pemKey, err := ssh.MarshalPrivateKey(privKey, "")
+	if err != nil {
+		return fmt.Errorf("could not marshal ed25519 private key: %w", err)
 	}
 	pemPrivKey := pem.EncodeToMemory(pemKey)
 
-	err := km.writeKeyFile(pemPrivKey)
+	err = km.writeKeyFile(pemPrivKey)
 	if err != nil {
 		return err
 	}
