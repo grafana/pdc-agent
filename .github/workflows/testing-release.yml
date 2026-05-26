@@ -6,13 +6,16 @@ on:
       ref:
         description: 'Branch or commit to build from'
         required: true
-permissions:
-  id-token: write
-  contents: read
+
+permissions: {}
 
 jobs:
-  testing-release:
+  build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      image: ${{ steps.metadata.outputs.image }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -24,14 +27,49 @@ jobs:
         with:
           go-version: "1.26.3"
           cache: false
-      - name: Login to DockerHub
-        uses: grafana/shared-workflows/actions/dockerhub-login@081a366728379fd0426b9cfef190e9a21c2d5418 # dockerhub-login/v1.0.3
-      - name: Build and push snapshot Docker image
+      - name: Set image metadata
+        id: metadata
         run: |
           TAG="$(git rev-parse --short HEAD)"
-          NAME="grafana/pdc-agent:testing-${TAG}"
+          IMAGE="grafana/pdc-agent:testing-${TAG}"
+          echo "image=${IMAGE}" >> "${GITHUB_OUTPUT}"
+      - name: Build snapshot Docker image
+        env:
+          IMAGE: ${{ steps.metadata.outputs.image }}
+        run: |
           CGO_ENABLED=0 make build
           cp pdc cmd/pdc/pdc
-          docker build -t "${NAME}" cmd/pdc/
-          docker push "${NAME}"
-          echo "Pushed ${NAME}"
+          docker build -t "${IMAGE}" cmd/pdc/
+          docker save "${IMAGE}" --output pdc-agent-testing-image.tar
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdc-agent-testing-image
+          path: pdc-agent-testing-image.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: build
+    if: ${{ github.ref_name == github.event.repository.default_branch }}
+    environment: testing-release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pdc-agent-testing-image
+          path: .
+      - name: Load Docker image
+        run: docker load --input pdc-agent-testing-image.tar
+      - name: Login to DockerHub
+        uses: grafana/shared-workflows/actions/dockerhub-login@081a366728379fd0426b9cfef190e9a21c2d5418 # dockerhub-login/v1.0.3
+      - name: Push snapshot Docker image
+        env:
+          IMAGE: ${{ needs.build.outputs.image }}
+        run: |
+          docker push "${IMAGE}"
+          echo "Pushed ${IMAGE}"
