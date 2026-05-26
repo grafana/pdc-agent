@@ -12,6 +12,8 @@ permissions:
 
 jobs:
   snyk-scan-ci:
-    uses: 'grafana/security-github-actions/.github/workflows/snyk_monitor.yml@main'
+    # Pinned to a commit SHA on main; this repo has no tagged releases. Bump
+    # when dependabot opens a PR or when a meaningful change lands upstream.
+    uses: 'grafana/security-github-actions/.github/workflows/snyk_monitor.yml@5140d598f06d98b6f62bdae3ff66ea31f2994300' # main @ 2026-05-22
     secrets:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
