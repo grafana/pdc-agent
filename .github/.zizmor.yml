@@ -1,9 +1,13 @@
 # This is also used as the default configuration for the Zizmor reusable
 # workflow.
+#
+# Every `uses:` in this repo is pinned to a commit SHA, so we require hash-pin
+# universally. If a future change needs to land an action that genuinely can't
+# be SHA-pinned, narrow the exception to that specific action rather than
+# loosening the org-wide policy.
 
 rules:
   unpinned-uses:
     config:
       policies:
-        actions/*: any # trust GitHub
-        grafana/*: any # trust Grafana
+        "*": hash-pin
