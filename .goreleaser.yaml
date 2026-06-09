@@ -45,10 +45,10 @@ dockers:
       - pdc
     dockerfile: ./cmd/pdc/Dockerfile
     image_templates:
-      - grafana/{{ .ProjectName }}:latest
-      - grafana/{{ .ProjectName }}:latest-amd64
-      - grafana/{{ .ProjectName }}:{{ .Version }}
-      - grafana/{{ .ProjectName }}:{{ .Version }}-amd64
+      - us-docker.pkg.dev/grafanalabs-global/dockerhub-pdc-agent-prod-mirror/{{ .ProjectName }}:latest
+      - us-docker.pkg.dev/grafanalabs-global/dockerhub-pdc-agent-prod-mirror/{{ .ProjectName }}:latest-amd64
+      - us-docker.pkg.dev/grafanalabs-global/dockerhub-pdc-agent-prod-mirror/{{ .ProjectName }}:{{ .Version }}
+      - us-docker.pkg.dev/grafanalabs-global/dockerhub-pdc-agent-prod-mirror/{{ .ProjectName }}:{{ .Version }}-amd64
     build_flag_templates:
       - "--platform=linux/amd64"
       - "--provenance=false"
@@ -59,21 +59,21 @@ dockers:
       - pdc
     dockerfile: ./cmd/pdc/Dockerfile
     image_templates:
-      - grafana/{{ .ProjectName }}:latest-arm64
-      - grafana/{{ .ProjectName }}:{{ .Version }}-arm64
+      - us-docker.pkg.dev/grafanalabs-global/dockerhub-pdc-agent-prod-mirror/{{ .ProjectName }}:latest-arm64
+      - us-docker.pkg.dev/grafanalabs-global/dockerhub-pdc-agent-prod-mirror/{{ .ProjectName }}:{{ .Version }}-arm64
     build_flag_templates:
       - "--platform=linux/arm64"
       - "--provenance=false"
 
 docker_manifests:
-- name_template: 'grafana/{{ .ProjectName }}:{{ .Version }}'
+- name_template: 'us-docker.pkg.dev/grafanalabs-global/dockerhub-pdc-agent-prod-mirror/{{ .ProjectName }}:{{ .Version }}'
   image_templates:
-  - 'grafana/{{ .ProjectName }}:{{ .Version }}-amd64'
-  - 'grafana/{{ .ProjectName }}:{{ .Version }}-arm64'
-- name_template: 'grafana/{{ .ProjectName }}:latest'
+  - 'us-docker.pkg.dev/grafanalabs-global/dockerhub-pdc-agent-prod-mirror/{{ .ProjectName }}:{{ .Version }}-amd64'
+  - 'us-docker.pkg.dev/grafanalabs-global/dockerhub-pdc-agent-prod-mirror/{{ .ProjectName }}:{{ .Version }}-arm64'
+- name_template: 'us-docker.pkg.dev/grafanalabs-global/dockerhub-pdc-agent-prod-mirror/{{ .ProjectName }}:latest'
   image_templates:
-  - 'grafana/{{ .ProjectName }}:latest-amd64'
-  - 'grafana/{{ .ProjectName }}:latest-arm64'
+  - 'us-docker.pkg.dev/grafanalabs-global/dockerhub-pdc-agent-prod-mirror/{{ .ProjectName }}:latest-amd64'
+  - 'us-docker.pkg.dev/grafanalabs-global/dockerhub-pdc-agent-prod-mirror/{{ .ProjectName }}:latest-arm64'
 
 
 
