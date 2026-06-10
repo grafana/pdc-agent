@@ -24,12 +24,14 @@ jobs:
         with:
           go-version: "1.26.4"
           cache: false
-      - name: Login to DockerHub
-        uses: grafana/shared-workflows/actions/dockerhub-login@081a366728379fd0426b9cfef190e9a21c2d5418 # dockerhub-login/v1.0.3
+      - name: Login to GAR
+        uses: grafana/shared-workflows/actions/login-to-gar@c7ad5f57693ac858c698d95783685a9cbfd91223 # login-to-gar/v1.0.1
+        with:
+          registry: us-docker.pkg.dev
       - name: Build and push snapshot Docker image
         run: |
           TAG="$(git rev-parse --short HEAD)"
-          NAME="grafana/pdc-agent:testing-${TAG}"
+          NAME="us-docker.pkg.dev/grafanalabs-global/dockerhub-pdc-agent-prod-mirror/pdc-agent:testing-${TAG}"
           CGO_ENABLED=0 make build
           cp pdc cmd/pdc/pdc
           docker build -t "${NAME}" cmd/pdc/
