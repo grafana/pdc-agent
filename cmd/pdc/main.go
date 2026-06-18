@@ -56,6 +56,8 @@ type mainFlags struct {
 	//
 	// DevMode is true when the agent is being run locally while someone is working on it.
 	DevMode bool
+
+	PrintVersion bool
 }
 
 func (mf *mainFlags) RegisterFlags(fs *flag.FlagSet) {
@@ -70,6 +72,8 @@ func (mf *mainFlags) RegisterFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&mf.RegionFormat, "region-format", false, "Use the new region format for API and Gateway URLs (private-datasource-connect-api.{cluster}.{domain} and private-datasource-connect.{cluster}.{domain} instead of private-datasource-connect-api-{cluster}.{domain} and private-datasource-connect-{cluster}.{domain})")
 
 	fs.BoolVar(&mf.DevMode, "dev-mode", false, "[DEVELOPMENT ONLY] run the agent in development mode")
+
+	fs.BoolVar(&mf.PrintVersion, "version", false, "Version for pdc-agent")
 
 	// flags should always take precedence over env vars
 	if mf.Cluster == "" {
@@ -107,6 +111,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	if mf.PrintVersion {
+		fmt.Println("v" + version)
+		return
+	}
+
+	if mf.PrintHelp {
+		usageFn()
+		return
+	}
+
 	sshConfig.Args = os.Args[1:]
 	logger := setupLogger(mf.LogLevel)
 
@@ -118,11 +132,6 @@ func main() {
 		"os", runtime.GOOS,
 		"arch", runtime.GOARCH,
 	)
-
-	if mf.PrintHelp {
-		usageFn()
-		return
-	}
 
 	if inLegacyMode() {
 		sshConfig.LegacyMode = true
