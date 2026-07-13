@@ -462,7 +462,7 @@ func (adapter LoggerWriterAdapter) Write(p []byte) (n int, err error) {
 }
 
 // openssh must be running 9.2 or above
-// checks version in format OpenSSH_{MAJOR}.{MINOR}
+// checks version in OpenSSH_{MAJOR}.{MINOR} or OpenSSH_for_Windows_{MAJOR}.{MINOR} format
 func validateSSHVersion(ctx context.Context, logger log.Logger, sshCmd string) error {
 	out, err := exec.CommandContext(ctx, sshCmd, "-V").CombinedOutput()
 	if err != nil {
@@ -479,7 +479,7 @@ func validateSSHVersion(ctx context.Context, logger log.Logger, sshCmd string) e
 	return RequireSSHVersionAbove9_2(major, minor)
 }
 
-var sshVersionRegexp = regexp.MustCompile(`OpenSSH_(\d+)\.(\d+)`)
+var sshVersionRegexp = regexp.MustCompile(`OpenSSH(?:_for_Windows)?_(\d+)\.(\d+)`)
 
 func ParseSSHVersion(version string) (int, int, error) {
 	matches := sshVersionRegexp.FindStringSubmatch(version)

@@ -398,6 +398,14 @@ func TestSSHVersionValidation(t *testing.T) {
 			version: "OpenSSH_19.1p1, test ssh metadata",
 			valid:   true,
 		},
+		{
+			version: "OpenSSH_for_Windows_7.7p1",
+			valid:   false,
+		},
+		{
+			version: "OpenSSH_for_Windows_9.5p1, LibreSSL 3.8.2",
+			valid:   true,
+		},
 	}
 	for _, tc := range testcases {
 		t.Run(tc.version, func(t *testing.T) {
@@ -414,6 +422,26 @@ func TestSSHVersionValidation(t *testing.T) {
 		})
 	}
 
+}
+
+func TestParseWindowsSSHVersion(t *testing.T) {
+	testcases := []struct {
+		version string
+		major   int
+		minor   int
+	}{
+		{version: "OpenSSH_for_Windows_7.7p1", major: 7, minor: 7},
+		{version: "OpenSSH_for_Windows_9.5p1, LibreSSL 3.8.2", major: 9, minor: 5},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.version, func(t *testing.T) {
+			major, minor, err := ssh.ParseSSHVersion(tc.version)
+			require.NoError(t, err)
+			require.Equal(t, tc.major, major)
+			require.Equal(t, tc.minor, minor)
+		})
+	}
 }
 
 type assertFn func(t *testing.T, s string)
