@@ -108,7 +108,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.DevPort, "dev-ssh-port", 2244, "[DEVELOPMENT ONLY] The port to use for agent connections to the PDC SSH gateway")
 	f.BoolVar(&cfg.GoSSH, "use-gossh", false, "Use Go-based SSH. Defaults to OpenSSH.")
 	f.Func("permit-domains", "List of domains that are allowed to receive queries (defaults to 'all')", cfg.buildDomains)
-	f.DurationVar(&cfg.ConnectionTimeout, "connect-timeout", 1*time.Second, "Specifies the timeout (in seconds) used when connecting. Similar to ConnectTimeout in OpenSSH.")
+	f.DurationVar(&cfg.ConnectionTimeout, "connect-timeout", 5*time.Second, "Specifies the timeout (in seconds) used when connecting. Similar to ConnectTimeout in OpenSSH.")
 }
 
 func (cfg Config) KeyFileDir() string {
