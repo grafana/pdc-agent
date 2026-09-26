@@ -1,8 +1,8 @@
 # Kubernetes config
 
-This directory contains Kubernetes manifest templates for rolling out the PDC Agent.
+This directory contains a Kubernetes manifest for rolling out the PDC Agent.
 
-It contains two manifests: `agent-bare.yaml`, which describes te agent Deployment, and `agent-secret-bare.yaml`, which describes the Secret which the Agent will need to connect to the PDC gateway. Both of these manifests are templates - they contain variables, so they cannot be used as-is.
+`pdc-agent-deployment.yaml` describes the agent Deployment. It reads its connection settings from a Secret named `grafana-pdc-agent`, which you create in step 1.
 
 ## Installing 
 
@@ -26,3 +26,20 @@ Create a pdc-agent deployment with:
 ```
 kubectl apply -n ${NAMESPACE} -f https://raw.githubusercontent.com/grafana/pdc-agent/main/production/kubernetes/pdc-agent-deployment.yaml
 ```
+
+### Clusters that use the region URL format
+
+By default the agent connects to `private-datasource-connect-api-<cluster>.grafana.net`. Some clusters
+use the region URL format instead, `private-datasource-connect-api.<cluster>.grafana.net`. With the
+wrong format the agent fails to sign its key, logs `key signing request failed`, and restarts.
+
+To check which format your cluster uses, compare the HTTP status of both API hosts. The one that
+exists answers `401` without credentials:
+
+```
+curl -s -o /dev/null -w "%{http_code}\n" -X POST "https://private-datasource-connect-api-${GCLOUD_PDC_CLUSTER}.grafana.net/pdc/api/v1/sign-public-key"
+curl -s -o /dev/null -w "%{http_code}\n" -X POST "https://private-datasource-connect-api.${GCLOUD_PDC_CLUSTER}.grafana.net/pdc/api/v1/sign-public-key"
+```
+
+If only the second one answers `401`, download the manifest, uncomment the `-region-format` argument,
+and apply your local copy instead of the URL above.
