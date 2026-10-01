@@ -45,6 +45,9 @@ spec:
         - $(TOKEN)
         - -gcloud-hosted-grafana-id
         - "$(HOSTED_GRAFANA_ID)"
+        # Uncomment when your cluster uses the region URL format
+        # (private-datasource-connect-api.<cluster>.grafana.net), see README.md.
+        # - -region-format
         image: grafana/pdc-agent:latest
         imagePullPolicy: Always
         resources:
