@@ -6,3 +6,4 @@ RUN addgroup -g 30000 pdc && adduser -G pdc -u 30000 pdc -D
 RUN chown -R pdc:pdc /usr/bin/pdc
 USER 30000:30000
 ENTRYPOINT ["/usr/bin/pdc"]
+LABEL org.opencontainers.image.source="https://github.com/grafana/pdc-agent"
