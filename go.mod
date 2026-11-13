@@ -8,7 +8,7 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/prometheus/client_golang v1.23.2
 	github.com/stretchr/testify v1.12.1
-	github.com/things-go/go-socks5 v0.1.3
+	github.com/things-go/go-socks5 v0.1.4
 	golang.org/x/crypto v0.56.0
 	pgregory.net/rapid v1.2.0
 )
