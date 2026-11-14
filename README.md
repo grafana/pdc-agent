@@ -4,7 +4,7 @@ The Grafana Private Datasource Connect Agent allows connecting private datasourc
 
 ## Installation
 
-Follow installation and running instructions in the [Grafana Labs Documentation](https://grafana.com/docs/grafana-cloud/data-configuration/configure-private-datasource-connect/)
+Follow installation and running instructions in the [Grafana Labs Documentation](https://grafana.com/docs/grafana-cloud/observe-and-act/connect-externally-hosted/private-data-source-connect/configure-pdc/)
 
 ## Setting the ssh log level
 
